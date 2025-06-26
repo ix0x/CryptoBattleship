@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+:root {
+  /* CryptoBattleship Dark Theme */
+  --navy-dark: #0f1b2e;
+  --navy-base: #1a2742;
+  --navy-light: #243454;
+  --silver-dark: #8a9ba8;
+  --silver-base: #a8b8c4;
+  --silver-light: #c4d1dc;
+  --red-muted: #8b5a5a;
+  --red-accent: #a67373;
+  --black-deep: #0a0a0a;
+  
+  /* Theme Variables */
+  --background: var(--navy-dark);
+  --foreground: var(--silver-light);
+  --card: var(--navy-base);
+  --card-foreground: var(--silver-base);
+  --primary: var(--silver-base);
+  --primary-foreground: var(--navy-dark);
+  --secondary: var(--navy-light);
+  --secondary-foreground: var(--silver-light);
+  --accent: var(--red-muted);
+  --accent-foreground: var(--silver-light);
+  --border: var(--navy-light);
+  --input: var(--navy-light);
+  --ring: var(--silver-base);
+}
+
+@theme inline {
+  /* Layout Colors */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  
+  /* Component Colors */
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  
+  /* Border & Input Colors */
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  
+  /* CryptoBattleship Brand Colors */
+  --color-navy-dark: var(--navy-dark);
+  --color-navy-base: var(--navy-base);
+  --color-navy-light: var(--navy-light);
+  --color-silver-dark: var(--silver-dark);
+  --color-silver-base: var(--silver-base);
+  --color-silver-light: var(--silver-light);
+  --color-red-muted: var(--red-muted);
+  --color-red-accent: var(--red-accent);
+  
+  /* Status Colors */
+  --color-success: #4ade80;
+  --color-warning: #fbbf24;
+  --color-error: #ef4444;
+  --color-info: var(--silver-base);
+  
+  /* Typography */
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'Courier New', monospace;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+}
+
+/* Custom scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--navy-base);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--silver-dark);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--silver-base);
+}
