@@ -34,40 +34,90 @@ interface IGameConfig {
     function getGameFeePercentage() external view returns (uint256);
 }
 
-interface INFTManager {
+// Interfaces for split NFT contracts
+interface IShipNFTManager {
     enum ShipType { DESTROYER, SUBMARINE, CRUISER, BATTLESHIP, CARRIER }
-    enum ActionType { OFFENSIVE, DEFENSIVE }
-    enum CaptainAbility { DAMAGE_BOOST, SPEED_BOOST, DEFENSE_BOOST, VISION_BOOST, LUCK_BOOST }
-    enum CrewType { GUNNER, ENGINEER, NAVIGATOR, MEDIC }
     enum Rarity { COMMON, UNCOMMON, RARE, EPIC, LEGENDARY }
-    enum NFTType { SHIP, ACTION, CAPTAIN, CREW }
-    
-    struct NFTMetadata {
-        NFTType nftType;
-        Rarity rarity;
-        uint8 usesRemaining;
-        uint8 stamina;
-        bool isRental;
-    }
     
     struct ShipStats {
         uint8 health;
         uint8 speed;
         uint8 shields;
         uint8 size;
+        uint8 firepower;
+        uint8 range;
+        uint8 armor;
+        uint8 stealth;
     }
     
     function ownerOf(uint256 tokenId) external view returns (address);
-    function getNFTMetadata(uint256 tokenId) external view returns (NFTMetadata memory);
-    function getShipStats(uint256 tokenId) external view returns (ShipStats memory);
-    function getActionPattern(uint256 tokenId) external view returns (uint8[] memory);
-    function getActionDamage(uint256 tokenId) external view returns (uint8);
-    function getActionType(uint256 tokenId) external view returns (ActionType);
-    function getCaptainAbility(uint256 tokenId) external view returns (CaptainAbility);
-    function getCrewType(uint256 tokenId) external view returns (CrewType);
-    function useAction(uint256 tokenId) external;
-    function useCrewStamina(uint256 tokenId, uint8 amount) external;
+    function getShipInfo(uint256 tokenId) external view returns (
+        ShipType shipType,
+        Rarity rarity,
+        ShipStats memory stats,
+        uint256 variantId,
+        bool isDestroyed,
+        uint256 crewCapacity
+    );
+    function canUseShip(uint256 tokenId) external view returns (bool canUse);
     function destroyShip(uint256 tokenId) external;
+    function useRentalGame(uint256 tokenId) external;
+}
+
+interface IActionNFTManager {
+    enum ActionCategory { OFFENSIVE, DEFENSIVE }
+    enum Rarity { COMMON, UNCOMMON, RARE, EPIC, LEGENDARY }
+    
+    struct ActionPattern {
+        uint8[] targetCells;
+        uint8 damage;
+        uint8 range;
+        ActionCategory category;
+    }
+    
+    function ownerOf(uint256 tokenId) external view returns (address);
+    function getActionInfo(uint256 tokenId) external view returns (
+        ActionPattern memory pattern,
+        ActionCategory category,
+        uint256 usesRemaining
+    );
+    function useAction(uint256 tokenId, address user) external;
+}
+
+interface ICaptainAndCrewNFTManager {
+    enum CaptainAbility { DAMAGE_BOOST, SPEED_BOOST, DEFENSE_BOOST, VISION_BOOST, LUCK_BOOST }
+    enum CrewType { GUNNER, ENGINEER, NAVIGATOR, MEDIC }
+    enum NFTType { CAPTAIN, CREW }
+    enum Rarity { COMMON, UNCOMMON, RARE, EPIC, LEGENDARY }
+    
+    struct CaptainInfo {
+        string name;
+        CaptainAbility ability;
+        uint8 abilityPower;
+        uint256 experience;
+        uint8 leadership;
+        uint8 tactics;
+        uint8 morale;
+    }
+    
+    struct CrewInfo {
+        string name;
+        CrewType crewType;
+        uint8 skillLevel;
+        uint8 stamina;
+        uint8 maxStamina;
+        uint256 experience;
+        uint8 efficiency;
+        uint8 loyalty;
+        uint256 lastUsed;
+        uint256 variantId;
+    }
+    
+    function ownerOf(uint256 tokenId) external view returns (address);
+    function getCaptainInfo(uint256 tokenId) external view returns (CaptainInfo memory info);
+    function getCrewInfo(uint256 tokenId) external view returns (CrewInfo memory info);
+    function canUseCrew(uint256 tokenId) external view returns (bool canUse, uint8 currentStamina);
+    function useCrewStamina(uint256 tokenId, address user) external;
 }
 
 interface ITokenomicsCore {
@@ -90,13 +140,34 @@ contract BattleshipGame is ReentrancyGuard, Pausable, Ownable {
     // =============================================================================
     
     IGameConfig public gameConfig;
-    INFTManager public nftManager;
+    IShipNFTManager public shipNFTManager;
+    IActionNFTManager public actionNFTManager;
+    ICaptainAndCrewNFTManager public captainAndCrewNFTManager;
     ITokenomicsCore public tokenomicsCore;
     
     // Legacy storage for compatibility
     address public gameConfigContract;
-    address public nftManagerContract;
+    address public shipNFTManagerContract;
+    address public actionNFTManagerContract;
+    address public captainAndCrewNFTManagerContract;
     address public tokenomicsCoreContract;
+    
+    // =============================================================================
+    // ANTE SYSTEM CONFIGURATION
+    // =============================================================================
+    
+    // Current ante configuration
+    struct AnteConfig {
+        bool useFixedAnte;           // True = fixed ante, False = flexible matching system
+        uint256 fixedAnteAmount;     // Fixed ante amount in wei (when useFixedAnte = true)
+        mapping(GameSize => uint256) gameTypeAntes;  // Future: different antes per game size
+    }
+    
+    AnteConfig public anteConfig;
+    
+    // Events for ante system
+    event AnteConfigUpdated(bool useFixedAnte, uint256 fixedAmount);
+    event GameTypeAnteUpdated(GameSize gameSize, uint256 anteAmount);
     
     // =============================================================================
     // ENUMS AND STRUCTS (from STANDARDS.md)
@@ -219,6 +290,7 @@ contract BattleshipGame is ReentrancyGuard, Pausable, Ownable {
     event TurnAdvanced(uint256 indexed gameId, address indexed player, uint8 actionsRemaining);
     event CellRevealed(uint256 indexed gameId, address indexed player, uint8 cellIndex, CellState cellState);
     event ShipPlaced(uint256 indexed gameId, address indexed player, uint8 shipIndex, uint8 position, ShipRotation rotation);
+    event NFTManagerUpdated(address indexed oldManager, address indexed newManager);
     
     // =============================================================================
     // MODIFIERS
@@ -258,10 +330,28 @@ contract BattleshipGame is ReentrancyGuard, Pausable, Ownable {
     // CONSTRUCTOR
     // =============================================================================
     
-    constructor(address _initialAdmin) {
+    constructor(
+        address _initialAdmin,
+        address _shipNFTManager,
+        address _actionNFTManager,
+        address _captainAndCrewNFTManager
+    ) {
         require(_initialAdmin != address(0), "BattleshipGame: Initial admin cannot be zero address");
+        require(_shipNFTManager != address(0), "BattleshipGame: Ship NFT manager cannot be zero address");
+        require(_actionNFTManager != address(0), "BattleshipGame: Action NFT manager cannot be zero address");
+        require(_captainAndCrewNFTManager != address(0), "BattleshipGame: Captain and crew NFT manager cannot be zero address");
+        
         _transferOwnership(_initialAdmin);
         gameCounter = 0;
+        
+        // Set NFT contract addresses
+        shipNFTManager = IShipNFTManager(_shipNFTManager);
+        actionNFTManager = IActionNFTManager(_actionNFTManager);
+        captainAndCrewNFTManager = ICaptainAndCrewNFTManager(_captainAndCrewNFTManager);
+        
+        // Initialize ante system - 1 S for testing (1 * 10^18 wei)
+        anteConfig.useFixedAnte = true;
+        anteConfig.fixedAnteAmount = 1 ether; // 1 S
     }
 
     // =============================================================================
@@ -394,43 +484,86 @@ contract BattleshipGame is ReentrancyGuard, Pausable, Ownable {
     /**
      * @dev Set contract addresses for integration
      * @param _gameConfig GameConfig contract address
-     * @param _nftManager NFTManager contract address
+     * @param _shipNFTManager ShipNFTManager contract address
+     * @param _actionNFTManager ActionNFTManager contract address
+     * @param _captainAndCrewNFTManager CaptainAndCrewNFTManager contract address
      * @param _tokenomicsCore TokenomicsCore contract address
      */
     function setContractAddresses(
         address _gameConfig,
-        address _nftManager,
+        address _shipNFTManager,
+        address _actionNFTManager,
+        address _captainAndCrewNFTManager,
         address _tokenomicsCore
     ) external onlyOwner {
         require(_gameConfig != address(0), "BattleshipGame: GameConfig cannot be zero address");
-        require(_nftManager != address(0), "BattleshipGame: NFTManager cannot be zero address");
+        require(_shipNFTManager != address(0), "BattleshipGame: ShipNFTManager cannot be zero address");
+        require(_actionNFTManager != address(0), "BattleshipGame: ActionNFTManager cannot be zero address");
+        require(_captainAndCrewNFTManager != address(0), "BattleshipGame: CaptainAndCrewNFTManager cannot be zero address");
         require(_tokenomicsCore != address(0), "BattleshipGame: TokenomicsCore cannot be zero address");
         
         gameConfig = IGameConfig(_gameConfig);
-        nftManager = INFTManager(_nftManager);
+        shipNFTManager = IShipNFTManager(_shipNFTManager);
+        actionNFTManager = IActionNFTManager(_actionNFTManager);
+        captainAndCrewNFTManager = ICaptainAndCrewNFTManager(_captainAndCrewNFTManager);
         tokenomicsCore = ITokenomicsCore(_tokenomicsCore);
         
         // Keep legacy storage for compatibility
         gameConfigContract = _gameConfig;
-        nftManagerContract = _nftManager;
+        shipNFTManagerContract = _shipNFTManager;
+        actionNFTManagerContract = _actionNFTManager;
+        captainAndCrewNFTManagerContract = _captainAndCrewNFTManager;
         tokenomicsCoreContract = _tokenomicsCore;
+    }
+    
+    /**
+     * @dev Update ship NFT manager address
+     * @param _shipNFTManager New ship NFT manager address
+     */
+    function updateShipNFTManager(address _shipNFTManager) external onlyOwner {
+        require(_shipNFTManager != address(0), "BattleshipGame: Ship NFT manager cannot be zero address");
+        address oldManager = address(shipNFTManager);
+        shipNFTManager = IShipNFTManager(_shipNFTManager);
+        emit NFTManagerUpdated(oldManager, _shipNFTManager);
+    }
+    
+    /**
+     * @dev Update action NFT manager address
+     * @param _actionNFTManager New action NFT manager address
+     */
+    function updateActionNFTManager(address _actionNFTManager) external onlyOwner {
+        require(_actionNFTManager != address(0), "BattleshipGame: Action NFT manager cannot be zero address");
+        address oldManager = address(actionNFTManager);
+        actionNFTManager = IActionNFTManager(_actionNFTManager);
+        emit NFTManagerUpdated(oldManager, _actionNFTManager);
+    }
+    
+    /**
+     * @dev Update captain and crew NFT manager address
+     * @param _captainAndCrewNFTManager New captain and crew NFT manager address
+     */
+    function updateCaptainAndCrewNFTManager(address _captainAndCrewNFTManager) external onlyOwner {
+        require(_captainAndCrewNFTManager != address(0), "BattleshipGame: Captain and crew NFT manager cannot be zero address");
+        address oldManager = address(captainAndCrewNFTManager);
+        captainAndCrewNFTManager = ICaptainAndCrewNFTManager(_captainAndCrewNFTManager);
+        emit NFTManagerUpdated(oldManager, _captainAndCrewNFTManager);
     }
 
     /**
-     * @dev Function1: Create new game with entry fee
+     * @dev Function1: Create new game with standardized ante
      * @param size Game size (SHRIMP, FISH, SHARK, WHALE)
-     * @param entryFee Entry fee amount in wei
      * @return gameId The ID of the created game
      */
-    function createGame(GameSize size, uint256 entryFee) 
+    function createGame(GameSize size) 
         external 
         payable 
         whenNotPaused 
         nonReentrant 
         returns (uint256 gameId) 
     {
-        require(msg.value == entryFee, "BattleshipGame: Incorrect entry fee amount");
-        require(entryFee > 0, "BattleshipGame: Entry fee must be greater than zero");
+        uint256 requiredAnte = _getRequiredAnte(size);
+        require(msg.value == requiredAnte, "BattleshipGame: Incorrect ante amount");
+        require(requiredAnte > 0, "BattleshipGame: Ante must be greater than zero");
         
         // Increment game counter and assign ID
         gameCounter++;
@@ -442,7 +575,7 @@ contract BattleshipGame is ReentrancyGuard, Pausable, Ownable {
             player2: address(0),
             size: size,
             status: GameStatus.WAITING,
-            entryFee: entryFee,
+            entryFee: requiredAnte,
             startTime: 0,
             lastMoveTime: 0,
             currentTurn: address(0),
@@ -456,11 +589,58 @@ contract BattleshipGame is ReentrancyGuard, Pausable, Ownable {
             turnStartTime: 0,
             totalTurns: 0,
             gridRevealed: false,
-            totalPot: entryFee,
+            totalPot: requiredAnte,
             feesDistributed: false
         });
         
-        emit GameCreated(gameId, msg.sender, size, entryFee);
+        emit GameCreated(gameId, msg.sender, size, requiredAnte);
+    }
+
+    /**
+     * @dev Get required ante for game size
+     * @param size Game size
+     * @return ante Required ante amount in wei
+     */
+    function _getRequiredAnte(GameSize size) internal view returns (uint256 ante) {
+        if (anteConfig.useFixedAnte) {
+            return anteConfig.fixedAnteAmount;
+        } else {
+            return anteConfig.gameTypeAntes[size];
+        }
+    }
+
+    /**
+     * @dev Get required ante for game size (public view)
+     * @param size Game size
+     * @return ante Required ante amount in wei
+     */
+    function getRequiredAnte(GameSize size) external view returns (uint256 ante) {
+        return _getRequiredAnte(size);
+    }
+
+    /**
+     * @dev Update ante configuration (admin only)
+     * @param useFixed True for fixed ante, false for flexible system
+     * @param fixedAmount Fixed ante amount (when useFixed = true)
+     */
+    function updateAnteConfig(bool useFixed, uint256 fixedAmount) external onlyOwner {
+        anteConfig.useFixedAnte = useFixed;
+        if (useFixed) {
+            require(fixedAmount > 0, "BattleshipGame: Fixed ante must be greater than zero");
+            anteConfig.fixedAnteAmount = fixedAmount;
+        }
+        emit AnteConfigUpdated(useFixed, fixedAmount);
+    }
+
+    /**
+     * @dev Set ante for specific game type (for future flexible system)
+     * @param gameSize Game size to set ante for
+     * @param anteAmount Ante amount in wei
+     */
+    function setGameTypeAnte(GameSize gameSize, uint256 anteAmount) external onlyOwner {
+        require(anteAmount > 0, "BattleshipGame: Ante must be greater than zero");
+        anteConfig.gameTypeAntes[gameSize] = anteAmount;
+        emit GameTypeAnteUpdated(gameSize, anteAmount);
     }
 
     /**
@@ -521,34 +701,29 @@ contract BattleshipGame is ReentrancyGuard, Pausable, Ownable {
     ) internal view {
         require(shipIds.length == 5, "BattleshipGame: Must have exactly 5 ships");
         require(crewIds.length <= 15, "BattleshipGame: Too many crew members"); // Max crew capacity
-        require(address(nftManager) != address(0), "BattleshipGame: NFTManager not set");
+        require(address(shipNFTManager) != address(0), "BattleshipGame: ShipNFTManager not set");
+        require(address(captainAndCrewNFTManager) != address(0), "BattleshipGame: CaptainAndCrewNFTManager not set");
         
-        // Validate ship ownership and types
+        // Validate ship ownership and usability
         for (uint256 i = 0; i < shipIds.length; i++) {
             require(shipIds[i] > 0, "BattleshipGame: Ship ID cannot be zero");
-            require(nftManager.ownerOf(shipIds[i]) == msg.sender, "BattleshipGame: Not owner of ship");
-            
-            INFTManager.NFTMetadata memory metadata = nftManager.getNFTMetadata(shipIds[i]);
-            require(metadata.nftType == INFTManager.NFTType.SHIP, "BattleshipGame: Token is not a ship");
-            require(!metadata.isRental || metadata.usesRemaining > 0, "BattleshipGame: Rental ship has no uses left");
+            require(shipNFTManager.ownerOf(shipIds[i]) == msg.sender, "BattleshipGame: Not owner of ship");
+            require(shipNFTManager.canUseShip(shipIds[i]), "BattleshipGame: Ship cannot be used");
         }
         
-        // Validate captain ownership and type (if provided)
+        // Validate captain ownership (if provided)
         if (captainId > 0) {
-            require(nftManager.ownerOf(captainId) == msg.sender, "BattleshipGame: Not owner of captain");
-            
-            INFTManager.NFTMetadata memory captainMetadata = nftManager.getNFTMetadata(captainId);
-            require(captainMetadata.nftType == INFTManager.NFTType.CAPTAIN, "BattleshipGame: Token is not a captain");
+            require(captainAndCrewNFTManager.ownerOf(captainId) == msg.sender, "BattleshipGame: Not owner of captain");
+            // Captain info will be validated by the NFTManager internally
         }
         
-        // Validate crew ownership and types
+        // Validate crew ownership and stamina
         for (uint256 i = 0; i < crewIds.length; i++) {
             require(crewIds[i] > 0, "BattleshipGame: Crew ID cannot be zero");
-            require(nftManager.ownerOf(crewIds[i]) == msg.sender, "BattleshipGame: Not owner of crew");
+            require(captainAndCrewNFTManager.ownerOf(crewIds[i]) == msg.sender, "BattleshipGame: Not owner of crew");
             
-            INFTManager.NFTMetadata memory crewMetadata = nftManager.getNFTMetadata(crewIds[i]);
-            require(crewMetadata.nftType == INFTManager.NFTType.CREW, "BattleshipGame: Token is not crew");
-            require(crewMetadata.stamina >= 10, "BattleshipGame: Crew has insufficient stamina");
+            (bool canUse, uint8 currentStamina) = captainAndCrewNFTManager.canUseCrew(crewIds[i]);
+            require(canUse, "BattleshipGame: Crew has insufficient stamina");
         }
     }
 
@@ -591,11 +766,11 @@ contract BattleshipGame is ReentrancyGuard, Pausable, Ownable {
             fleet.shipPositions[i] = positions[i];
             fleet.shipRotations[i] = rotations[i];
             
-            // Get ship stats from NFTManager
+            // Get ship stats from ShipNFTManager
             uint8 shipSize;
             uint8 shipHealth;
-            if (address(nftManager) != address(0)) {
-                INFTManager.ShipStats memory stats = nftManager.getShipStats(fleet.shipIds[i]);
+            if (address(shipNFTManager) != address(0)) {
+                (, , IShipNFTManager.ShipStats memory stats, , ,) = shipNFTManager.getShipInfo(fleet.shipIds[i]);
                 shipSize = stats.size;
                 shipHealth = stats.health;
             } else {
@@ -770,16 +945,16 @@ contract BattleshipGame is ReentrancyGuard, Pausable, Ownable {
      * @param player Player address
      */
     function _consumeCrewStamina(uint256 gameId, address player) internal {
-        if (address(nftManager) == address(0)) {
-            return; // NFTManager not set
+        if (address(captainAndCrewNFTManager) == address(0)) {
+            return; // CaptainAndCrewNFTManager not set
         }
         
         PlayerFleet storage fleet = playerFleets[gameId][player];
         
-        // Consume 10 stamina from each crew member
+        // Consume stamina from each crew member
         for (uint256 i = 0; i < fleet.crewIds.length; i++) {
             if (fleet.crewIds[i] > 0) {
-                nftManager.useCrewStamina(fleet.crewIds[i], 10);
+                captainAndCrewNFTManager.useCrewStamina(fleet.crewIds[i], player);
             }
         }
     }
@@ -1391,10 +1566,10 @@ contract BattleshipGame is ReentrancyGuard, Pausable, Ownable {
         uint8[5] memory shipSizes = [2, 3, 3, 4, 5];
         uint8 shipSize = shipSizes[shipIndex];
         
-        // Get ship speed from NFTManager
+        // Get ship speed from ShipNFTManager
         uint8 shipSpeed = 2; // Default fallback
-        if (address(nftManager) != address(0)) {
-            INFTManager.ShipStats memory stats = nftManager.getShipStats(fleet.shipIds[shipIndex]);
+        if (address(shipNFTManager) != address(0)) {
+            (, , IShipNFTManager.ShipStats memory stats, , ,) = shipNFTManager.getShipInfo(fleet.shipIds[shipIndex]);
             shipSpeed = stats.speed;
         }
         
@@ -1533,22 +1708,19 @@ contract BattleshipGame is ReentrancyGuard, Pausable, Ownable {
     {
         require(actionId > 0, "BattleshipGame: Invalid action ID");
         require(targetCells.length > 0, "BattleshipGame: Must specify target cells");
-        require(address(nftManager) != address(0), "BattleshipGame: NFTManager not set");
+        require(address(actionNFTManager) != address(0), "BattleshipGame: ActionNFTManager not set");
         
-        // Validate NFT ownership and get action details from NFTManager
-        require(nftManager.ownerOf(actionId) == msg.sender, "BattleshipGame: Not owner of action NFT");
+        // Validate NFT ownership and get action details from ActionNFTManager
+        require(actionNFTManager.ownerOf(actionId) == msg.sender, "BattleshipGame: Not owner of action NFT");
         
-        INFTManager.NFTMetadata memory metadata = nftManager.getNFTMetadata(actionId);
-        require(metadata.nftType == INFTManager.NFTType.ACTION, "BattleshipGame: Token is not an action");
-        require(metadata.usesRemaining > 0, "BattleshipGame: Action NFT has no uses remaining");
+        (IActionNFTManager.ActionPattern memory pattern, IActionNFTManager.ActionCategory category, uint256 usesRemaining) = actionNFTManager.getActionInfo(actionId);
+        require(usesRemaining > 0, "BattleshipGame: Action NFT has no uses remaining");
         
         // Validate target pattern matches action
-        uint8[] memory actionPattern = nftManager.getActionPattern(actionId);
-        require(targetCells.length == actionPattern.length, "BattleshipGame: Target cells must match action pattern");
+        require(targetCells.length == pattern.targetCells.length, "BattleshipGame: Target cells must match action pattern");
         
-        // Use an attack action or defense action based on NFT type
-        INFTManager.ActionType actionType = nftManager.getActionType(actionId);
-        if (actionType == INFTManager.ActionType.OFFENSIVE) {
+        // Use an attack action or defense action based on NFT category
+        if (category == IActionNFTManager.ActionCategory.OFFENSIVE) {
             _useAction(gameId, 1); // 1 = attack action
         } else {
             _useAction(gameId, 2); // 2 = defense action
@@ -1557,8 +1729,8 @@ contract BattleshipGame is ReentrancyGuard, Pausable, Ownable {
         GameInfo memory game = games[gameId];
         address opponent = (msg.sender == game.player1) ? game.player2 : game.player1;
         
-        // Get action damage from NFTManager
-        uint8 actionDamage = nftManager.getActionDamage(actionId);
+        // Get action damage from pattern
+        uint8 actionDamage = pattern.damage;
         
         // Apply captain/crew bonuses if enabled for action attacks
         uint8 totalDamage = _calculateAttackDamage(gameId, msg.sender, actionDamage, false);
@@ -1566,8 +1738,8 @@ contract BattleshipGame is ReentrancyGuard, Pausable, Ownable {
         // Execute attack with action pattern
         _executeAttack(gameId, msg.sender, opponent, targetCells, totalDamage);
         
-        // Consume action NFT use in NFTManager
-        nftManager.useAction(actionId);
+        // Consume action NFT use in ActionNFTManager
+        actionNFTManager.useAction(actionId, msg.sender);
     }
 
     /**
@@ -1683,20 +1855,20 @@ contract BattleshipGame is ReentrancyGuard, Pausable, Ownable {
     ) internal view returns (uint8 boostedDamage) {
         boostedDamage = baseDamage;
         
-        if (address(nftManager) == address(0) || address(gameConfig) == address(0)) {
+        if (address(captainAndCrewNFTManager) == address(0) || address(gameConfig) == address(0)) {
             return boostedDamage; // Contracts not set
         }
         
-        // Get captain ability from NFTManager
-        INFTManager.CaptainAbility ability = nftManager.getCaptainAbility(captainId);
+        // Get captain info from CaptainAndCrewNFTManager
+        ICaptainAndCrewNFTManager.CaptainInfo memory captainInfo = captainAndCrewNFTManager.getCaptainInfo(captainId);
         
         // Check if ability affects default attacks (from GameConfig)
-        if (isDefaultAttack && !gameConfig.getCaptainDefaultAttackToggle(ability)) {
+        if (isDefaultAttack && !gameConfig.getCaptainDefaultAttackToggle(captainInfo.ability)) {
             return boostedDamage; // This ability doesn't affect default attacks
         }
         
         // Apply damage boost if captain has damage boost ability
-        if (ability == INFTManager.CaptainAbility.DAMAGE_BOOST) {
+        if (captainInfo.ability == ICaptainAndCrewNFTManager.CaptainAbility.DAMAGE_BOOST) {
             boostedDamage += 1; // +1 damage boost
         }
     }
@@ -1718,7 +1890,7 @@ contract BattleshipGame is ReentrancyGuard, Pausable, Ownable {
         boostedDamage = baseDamage;
         PlayerFleet storage fleet = playerFleets[gameId][player];
         
-        if (address(nftManager) == address(0) || address(gameConfig) == address(0)) {
+        if (address(captainAndCrewNFTManager) == address(0) || address(gameConfig) == address(0)) {
             return boostedDamage; // Contracts not set
         }
         
@@ -1727,14 +1899,14 @@ contract BattleshipGame is ReentrancyGuard, Pausable, Ownable {
         for (uint256 i = 0; i < fleet.crewIds.length; i++) {
             if (fleet.crewIds[i] == 0) continue;
             
-            INFTManager.CrewType crewType = nftManager.getCrewType(fleet.crewIds[i]);
+            ICaptainAndCrewNFTManager.CrewInfo memory crewInfo = captainAndCrewNFTManager.getCrewInfo(fleet.crewIds[i]);
             
             // Check if crew type affects default attacks (from GameConfig)
-            if (isDefaultAttack && !gameConfig.getCrewDefaultAttackToggle(crewType)) {
+            if (isDefaultAttack && !gameConfig.getCrewDefaultAttackToggle(crewInfo.crewType)) {
                 continue; // This crew type doesn't affect default attacks
             }
             
-            if (crewType == INFTManager.CrewType.GUNNER) {
+            if (crewInfo.crewType == ICaptainAndCrewNFTManager.CrewType.GUNNER) {
                 gunnerCount++;
             }
         }
@@ -1973,14 +2145,10 @@ contract BattleshipGame is ReentrancyGuard, Pausable, Ownable {
         
         for (uint256 i = 0; i < 5; i++) {
             uint256 shipId = fleet.shipIds[i];
-            // Check if ship is a rental through NFTManager
-            if (address(nftManager) != address(0)) {
-                INFTManager.NFTMetadata memory metadata = nftManager.getNFTMetadata(shipId);
-                if (metadata.isRental) {
-                    // Decrement rental usage through marketplace
-                    // This will need to be implemented when marketplace reference is added
-                    // For now, it's a placeholder that can be connected later
-                }
+            // Check if ship is a rental through ShipNFTManager
+            if (address(shipNFTManager) != address(0)) {
+                // Use rental game (this decrements games remaining for rental ships)
+                shipNFTManager.useRentalGame(shipId);
             }
         }
     }
@@ -2012,9 +2180,9 @@ contract BattleshipGame is ReentrancyGuard, Pausable, Ownable {
             uint256 randomShipIndex = randomValue % 5; // Select random ship (0-4)
             uint256 shipToDestroy = fleet.shipIds[randomShipIndex];
             
-            // Destroy ship via NFTManager
-            if (address(nftManager) != address(0)) {
-                nftManager.destroyShip(shipToDestroy);
+            // Destroy ship via ShipNFTManager
+            if (address(shipNFTManager) != address(0)) {
+                shipNFTManager.destroyShip(shipToDestroy);
             }
             
             emit ShipDestroyed(gameId, loser, shipToDestroy);

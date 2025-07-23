@@ -19,17 +19,27 @@ interface ITokenomicsCore {
     function recordLootboxRevenue(uint256 amount) external;
 }
 
-interface INFTManager {
+interface IShipNFTManager {
     enum ShipType { DESTROYER, SUBMARINE, CRUISER, BATTLESHIP, CARRIER }
+    enum Rarity { COMMON, UNCOMMON, RARE, EPIC, LEGENDARY }
+    
+    function mintShip(address recipient, ShipType shipType, Rarity rarity) external returns (uint256 tokenId);
+}
+
+interface IActionNFTManager {
     enum ActionCategory { OFFENSIVE, DEFENSIVE }
+    enum Rarity { COMMON, UNCOMMON, RARE, EPIC, LEGENDARY }
+    
+    function mintAction(address recipient, ActionCategory category, Rarity rarity) external returns (uint256 tokenId);
+}
+
+interface ICaptainAndCrewNFTManager {
     enum CaptainAbility { DAMAGE_BOOST, SPEED_BOOST, DEFENSE_BOOST, VISION_BOOST, LUCK_BOOST }
     enum CrewType { GUNNER, ENGINEER, NAVIGATOR, MEDIC }
     enum Rarity { COMMON, UNCOMMON, RARE, EPIC, LEGENDARY }
     
-    function mintShip(address to, ShipType shipType, uint256 variantId, Rarity rarity) external returns (uint256);
-    function mintAction(address to, ActionCategory category, Rarity rarity) external returns (uint256);
-    function mintCaptain(address to, CaptainAbility ability, Rarity rarity) external returns (uint256);
-    function mintCrew(address to, CrewType crewType, Rarity rarity) external returns (uint256);
+    function mintCaptain(address recipient, CaptainAbility ability, Rarity rarity) external returns (uint256 tokenId);
+    function mintCrew(address recipient, CrewType crewType, Rarity rarity) external returns (uint256 tokenId);
 }
 
 interface IGameConfig {
@@ -100,7 +110,9 @@ contract LootboxSystem is Ownable, ReentrancyGuard, Pausable {
     // Contract references
     IBattleshipToken public battleshipToken;
     ITokenomicsCore public tokenomicsCore;
-    INFTManager public nftManager;
+    IShipNFTManager public shipNFTManager;
+    IActionNFTManager public actionNFTManager;
+    ICaptainAndCrewNFTManager public captainAndCrewNFTManager;
     IGameConfig public gameConfig;
     
     // Lootbox configuration
@@ -165,17 +177,23 @@ contract LootboxSystem is Ownable, ReentrancyGuard, Pausable {
     constructor(
         address _battleshipToken,
         address _tokenomicsCore,
-        address _nftManager,
+        address _shipNFTManager,
+        address _actionNFTManager,
+        address _captainAndCrewNFTManager,
         address _gameConfig
     ) Ownable(msg.sender) {
         require(_battleshipToken != address(0), "LootboxSystem: Invalid token address");
         require(_tokenomicsCore != address(0), "LootboxSystem: Invalid tokenomics address");
-        require(_nftManager != address(0), "LootboxSystem: Invalid NFT manager address");
+        require(_shipNFTManager != address(0), "LootboxSystem: Invalid ship NFT manager address");
+        require(_actionNFTManager != address(0), "LootboxSystem: Invalid action NFT manager address");
+        require(_captainAndCrewNFTManager != address(0), "LootboxSystem: Invalid captain and crew NFT manager address");
         require(_gameConfig != address(0), "LootboxSystem: Invalid config address");
         
         battleshipToken = IBattleshipToken(_battleshipToken);
         tokenomicsCore = ITokenomicsCore(_tokenomicsCore);
-        nftManager = INFTManager(_nftManager);
+        shipNFTManager = IShipNFTManager(_shipNFTManager);
+        actionNFTManager = IActionNFTManager(_actionNFTManager);
+        captainAndCrewNFTManager = ICaptainAndCrewNFTManager(_captainAndCrewNFTManager);
         gameConfig = IGameConfig(_gameConfig);
         
         // Initialize random seed
@@ -381,7 +399,7 @@ contract LootboxSystem is Ownable, ReentrancyGuard, Pausable {
         _updateRandomSeed(lootboxId);
         
         // 1. GUARANTEED SHIP DROP
-        (uint256 shipId, INFTManager.ShipType shipType, INFTManager.Rarity shipRarity) = _mintRandomShip(recipient);
+        (uint256 shipId, IShipNFTManager.ShipType shipType, IShipNFTManager.Rarity shipRarity) = _mintRandomShip(recipient);
         tempIds[dropCount] = shipId;
         tempTypes[dropCount] = 0; // Ship = 0
         tempRarities[dropCount] = uint8(shipRarity);
@@ -389,7 +407,7 @@ contract LootboxSystem is Ownable, ReentrancyGuard, Pausable {
         
         // 2. FIRST ACTION DROP (configurable chance)
         if (_rollDrop(actionDropRate)) {
-            (uint256 actionId, INFTManager.Rarity actionRarity) = _mintRandomAction(recipient);
+            (uint256 actionId, IActionNFTManager.Rarity actionRarity) = _mintRandomAction(recipient);
             tempIds[dropCount] = actionId;
             tempTypes[dropCount] = 1; // Action = 1
             tempRarities[dropCount] = uint8(actionRarity);
@@ -398,7 +416,7 @@ contract LootboxSystem is Ownable, ReentrancyGuard, Pausable {
         
         // 3. SECOND ACTION DROP (configurable chance)
         if (_rollDrop(bonusActionDropRate)) {
-            (uint256 actionId, INFTManager.Rarity actionRarity) = _mintRandomAction(recipient);
+            (uint256 actionId, IActionNFTManager.Rarity actionRarity) = _mintRandomAction(recipient);
             tempIds[dropCount] = actionId;
             tempTypes[dropCount] = 1; // Action = 1
             tempRarities[dropCount] = uint8(actionRarity);
@@ -407,7 +425,7 @@ contract LootboxSystem is Ownable, ReentrancyGuard, Pausable {
         
         // 4. CAPTAIN DROP (configurable chance)
         if (_rollDrop(captainDropRate)) {
-            (uint256 captainId, INFTManager.Rarity captainRarity) = _mintRandomCaptain(recipient);
+            (uint256 captainId, ICaptainAndCrewNFTManager.Rarity captainRarity) = _mintRandomCaptain(recipient);
             tempIds[dropCount] = captainId;
             tempTypes[dropCount] = 2; // Captain = 2
             tempRarities[dropCount] = uint8(captainRarity);
@@ -416,7 +434,7 @@ contract LootboxSystem is Ownable, ReentrancyGuard, Pausable {
         
         // 5. CREW DROP (configurable chance)
         if (_rollDrop(crewDropRate)) {
-            (uint256 crewId, INFTManager.Rarity crewRarity) = _mintRandomCrew(recipient);
+            (uint256 crewId, ICaptainAndCrewNFTManager.Rarity crewRarity) = _mintRandomCrew(recipient);
             tempIds[dropCount] = crewId;
             tempTypes[dropCount] = 3; // Crew = 3
             tempRarities[dropCount] = uint8(crewRarity);
@@ -440,16 +458,16 @@ contract LootboxSystem is Ownable, ReentrancyGuard, Pausable {
      */
     function _mintRandomShip(address recipient) 
         internal 
-        returns (uint256 nftId, INFTManager.ShipType shipType, INFTManager.Rarity rarity) 
+        returns (uint256 nftId, IShipNFTManager.ShipType shipType, IShipNFTManager.Rarity rarity) 
     {
         // Random ship type (0-4)
-        shipType = INFTManager.ShipType(_random() % 5);
+        shipType = IShipNFTManager.ShipType(_random() % 5);
         
         // Random rarity
-        rarity = _generateRarity();
+        rarity = _generateShipRarity();
         
-        // Mint ship with random variant (0 = random)
-        nftId = nftManager.mintShip(recipient, shipType, 0, rarity);
+        // Mint ship
+        nftId = shipNFTManager.mintShip(recipient, shipType, rarity);
     }
     
     /**
@@ -457,18 +475,18 @@ contract LootboxSystem is Ownable, ReentrancyGuard, Pausable {
      */
     function _mintRandomAction(address recipient) 
         internal 
-        returns (uint256 nftId, INFTManager.Rarity rarity) 
+        returns (uint256 nftId, IActionNFTManager.Rarity rarity) 
     {
         // Random action category (offensive vs defensive)
-        INFTManager.ActionCategory category = _random() % 2 == 0 ? 
-            INFTManager.ActionCategory.OFFENSIVE : 
-            INFTManager.ActionCategory.DEFENSIVE;
+        IActionNFTManager.ActionCategory category = _random() % 2 == 0 ? 
+            IActionNFTManager.ActionCategory.OFFENSIVE : 
+            IActionNFTManager.ActionCategory.DEFENSIVE;
         
         // Generate rarity
-        rarity = _generateRarity();
+        rarity = _generateActionRarity();
         
         // Mint action using template system (templates are automatically selected)
-        nftId = nftManager.mintAction(recipient, category, rarity);
+        nftId = actionNFTManager.mintAction(recipient, category, rarity);
     }
     
     /**
@@ -476,15 +494,15 @@ contract LootboxSystem is Ownable, ReentrancyGuard, Pausable {
      */
     function _mintRandomCaptain(address recipient) 
         internal 
-        returns (uint256 nftId, INFTManager.Rarity rarity) 
+        returns (uint256 nftId, ICaptainAndCrewNFTManager.Rarity rarity) 
     {
         // Random captain ability (0-4)
-        INFTManager.CaptainAbility ability = INFTManager.CaptainAbility(_random() % 5);
+        ICaptainAndCrewNFTManager.CaptainAbility ability = ICaptainAndCrewNFTManager.CaptainAbility(_random() % 5);
         
         // Random rarity (captains tend to be higher rarity)
         rarity = _generateCaptainRarity();
         
-        nftId = nftManager.mintCaptain(recipient, ability, rarity);
+        nftId = captainAndCrewNFTManager.mintCaptain(recipient, ability, rarity);
     }
     
     /**
@@ -492,53 +510,91 @@ contract LootboxSystem is Ownable, ReentrancyGuard, Pausable {
      */
     function _mintRandomCrew(address recipient) 
         internal 
-        returns (uint256 nftId, INFTManager.Rarity rarity) 
+        returns (uint256 nftId, ICaptainAndCrewNFTManager.Rarity rarity) 
     {
         // Random crew type (0-3)
-        INFTManager.CrewType crewType = INFTManager.CrewType(_random() % 4);
+        ICaptainAndCrewNFTManager.CrewType crewType = ICaptainAndCrewNFTManager.CrewType(_random() % 4);
         
         // Random rarity
-        rarity = _generateRarity();
+        rarity = _generateCrewRarity();
         
-        nftId = nftManager.mintCrew(recipient, crewType, rarity);
+        nftId = captainAndCrewNFTManager.mintCrew(recipient, crewType, rarity);
     }
     
     /**
-     * @dev Generate rarity based on configurable drop rates
+     * @dev Generate ship rarity based on configurable drop rates
      */
-    function _generateRarity() internal returns (INFTManager.Rarity) {
+    function _generateShipRarity() internal returns (IShipNFTManager.Rarity) {
         uint256 roll = _random() % 10000;
         
         if (roll < legendaryRate) {
-            return INFTManager.Rarity.LEGENDARY;
+            return IShipNFTManager.Rarity.LEGENDARY;
         } else if (roll < legendaryRate + epicRate) {
-            return INFTManager.Rarity.EPIC;
+            return IShipNFTManager.Rarity.EPIC;
         } else if (roll < legendaryRate + epicRate + rareRate) {
-            return INFTManager.Rarity.RARE;
+            return IShipNFTManager.Rarity.RARE;
         } else if (roll < legendaryRate + epicRate + rareRate + uncommonRate) {
-            return INFTManager.Rarity.UNCOMMON;
+            return IShipNFTManager.Rarity.UNCOMMON;
         } else {
-            return INFTManager.Rarity.COMMON;
+            return IShipNFTManager.Rarity.COMMON;
+        }
+    }
+    
+    /**
+     * @dev Generate action rarity based on configurable drop rates
+     */
+    function _generateActionRarity() internal returns (IActionNFTManager.Rarity) {
+        uint256 roll = _random() % 10000;
+        
+        if (roll < legendaryRate) {
+            return IActionNFTManager.Rarity.LEGENDARY;
+        } else if (roll < legendaryRate + epicRate) {
+            return IActionNFTManager.Rarity.EPIC;
+        } else if (roll < legendaryRate + epicRate + rareRate) {
+            return IActionNFTManager.Rarity.RARE;
+        } else if (roll < legendaryRate + epicRate + rareRate + uncommonRate) {
+            return IActionNFTManager.Rarity.UNCOMMON;
+        } else {
+            return IActionNFTManager.Rarity.COMMON;
+        }
+    }
+    
+    /**
+     * @dev Generate crew rarity based on configurable drop rates
+     */
+    function _generateCrewRarity() internal returns (ICaptainAndCrewNFTManager.Rarity) {
+        uint256 roll = _random() % 10000;
+        
+        if (roll < legendaryRate) {
+            return ICaptainAndCrewNFTManager.Rarity.LEGENDARY;
+        } else if (roll < legendaryRate + epicRate) {
+            return ICaptainAndCrewNFTManager.Rarity.EPIC;
+        } else if (roll < legendaryRate + epicRate + rareRate) {
+            return ICaptainAndCrewNFTManager.Rarity.RARE;
+        } else if (roll < legendaryRate + epicRate + rareRate + uncommonRate) {
+            return ICaptainAndCrewNFTManager.Rarity.UNCOMMON;
+        } else {
+            return ICaptainAndCrewNFTManager.Rarity.COMMON;
         }
     }
     
     /**
      * @dev Generate captain rarity (higher rates for rare captains)
      */
-    function _generateCaptainRarity() internal returns (INFTManager.Rarity) {
+    function _generateCaptainRarity() internal returns (ICaptainAndCrewNFTManager.Rarity) {
         uint256 roll = _random() % 10000;
         
         // Captains have 2x chance for rare+ rarities
         if (roll < legendaryRate * 2) {
-            return INFTManager.Rarity.LEGENDARY;
+            return ICaptainAndCrewNFTManager.Rarity.LEGENDARY;
         } else if (roll < (legendaryRate + epicRate) * 2) {
-            return INFTManager.Rarity.EPIC;
+            return ICaptainAndCrewNFTManager.Rarity.EPIC;
         } else if (roll < (legendaryRate + epicRate + rareRate) * 2) {
-            return INFTManager.Rarity.RARE;
+            return ICaptainAndCrewNFTManager.Rarity.RARE;
         } else if (roll < (legendaryRate + epicRate + rareRate + uncommonRate)) {
-            return INFTManager.Rarity.UNCOMMON;
+            return ICaptainAndCrewNFTManager.Rarity.UNCOMMON;
         } else {
-            return INFTManager.Rarity.COMMON;
+            return ICaptainAndCrewNFTManager.Rarity.COMMON;
         }
     }
     
@@ -689,8 +745,12 @@ contract LootboxSystem is Ownable, ReentrancyGuard, Pausable {
             battleshipToken = IBattleshipToken(newAddress);
         } else if (nameHash == keccak256(abi.encodePacked("TokenomicsCore"))) {
             tokenomicsCore = ITokenomicsCore(newAddress);
-        } else if (nameHash == keccak256(abi.encodePacked("NFTManager"))) {
-            nftManager = INFTManager(newAddress);
+        } else if (nameHash == keccak256(abi.encodePacked("ShipNFTManager"))) {
+            shipNFTManager = IShipNFTManager(newAddress);
+        } else if (nameHash == keccak256(abi.encodePacked("ActionNFTManager"))) {
+            actionNFTManager = IActionNFTManager(newAddress);
+        } else if (nameHash == keccak256(abi.encodePacked("CaptainAndCrewNFTManager"))) {
+            captainAndCrewNFTManager = ICaptainAndCrewNFTManager(newAddress);
         } else if (nameHash == keccak256(abi.encodePacked("GameConfig"))) {
             gameConfig = IGameConfig(newAddress);
         } else {

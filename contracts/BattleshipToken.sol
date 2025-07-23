@@ -28,6 +28,12 @@ contract BattleshipToken is ERC20, ERC20Pausable, Ownable, ReentrancyGuard {
     // Total minted through emissions (excluding initial supply)
     uint256 public totalMinted;
     
+    // Testnet faucet settings
+    bool public faucetEnabled;
+    uint256 public constant FAUCET_AMOUNT = 100 * 10**18; // 100 SHIP tokens per claim
+    uint256 public constant FAUCET_COOLDOWN = 24 hours;
+    mapping(address => uint256) public lastFaucetClaim;
+    
     // =============================================================================
     // EVENTS
     // =============================================================================
@@ -36,6 +42,8 @@ contract BattleshipToken is ERC20, ERC20Pausable, Ownable, ReentrancyGuard {
     event TokensMinted(address indexed to, uint256 amount, uint256 totalMinted);
     event EmergencyPauseActivated(address indexed admin, string reason);
     event EmergencyPauseDeactivated(address indexed admin);
+    event FaucetClaimed(address indexed user, uint256 amount, uint256 nextClaimTime);
+    event FaucetToggled(bool enabled);
     
     // =============================================================================
     // SECTION 2.1: BASIC ERC20 IMPLEMENTATION
@@ -57,6 +65,9 @@ contract BattleshipToken is ERC20, ERC20Pausable, Ownable, ReentrancyGuard {
         
         // Mint initial supply to designated recipient
         _mint(_initialSupplyRecipient, TOTAL_SUPPLY);
+        
+        // Enable faucet for testnet by default (owner can disable)
+        faucetEnabled = true;
     }
 
     /**
@@ -229,6 +240,65 @@ contract BattleshipToken is ERC20, ERC20Pausable, Ownable, ReentrancyGuard {
     }
 
     // =============================================================================
+    // SECTION 2.4: TESTNET FAUCET
+    // =============================================================================
+
+    /**
+     * @dev Claim tokens from testnet faucet
+     * @notice Users can claim 100 SHIP tokens once every 24 hours for testing
+     */
+    function claimFromFaucet() external whenNotPaused nonReentrant {
+        require(faucetEnabled, "BattleshipToken: Faucet is disabled");
+        require(
+            block.timestamp >= lastFaucetClaim[msg.sender] + FAUCET_COOLDOWN,
+            "BattleshipToken: Must wait 24 hours between claims"
+        );
+        
+        lastFaucetClaim[msg.sender] = block.timestamp;
+        uint256 nextClaimTime = block.timestamp + FAUCET_COOLDOWN;
+        
+        _mint(msg.sender, FAUCET_AMOUNT);
+        
+        emit FaucetClaimed(msg.sender, FAUCET_AMOUNT, nextClaimTime);
+    }
+
+    /**
+     * @dev Toggle faucet on/off (admin only)
+     * @param _enabled Whether to enable or disable the faucet
+     */
+    function toggleFaucet(bool _enabled) external onlyOwner {
+        faucetEnabled = _enabled;
+        emit FaucetToggled(_enabled);
+    }
+
+    /**
+     * @dev Check when user can next claim from faucet
+     * @param user Address to check
+     * @return nextClaimTime Timestamp when user can claim again (0 if can claim now)
+     * @return canClaim Whether user can claim now
+     * @return timeUntilClaim Seconds until next claim (0 if can claim now)
+     */
+    function getFaucetInfo(address user) external view returns (
+        uint256 nextClaimTime,
+        bool canClaim,
+        uint256 timeUntilClaim
+    ) {
+        if (!faucetEnabled) {
+            return (0, false, 0);
+        }
+        
+        uint256 lastClaim = lastFaucetClaim[user];
+        nextClaimTime = lastClaim + FAUCET_COOLDOWN;
+        canClaim = block.timestamp >= nextClaimTime;
+        
+        if (canClaim) {
+            timeUntilClaim = 0;
+        } else {
+            timeUntilClaim = nextClaimTime - block.timestamp;
+        }
+    }
+
+    // =============================================================================
     // SECTION 2.3: INTEGRATION INTERFACES
     // =============================================================================
 
@@ -332,7 +402,9 @@ contract BattleshipToken is ERC20, ERC20Pausable, Ownable, ReentrancyGuard {
         uint256 totalMinted,
         address minter,
         bool isPaused,
-        address owner
+        address owner,
+        bool faucetEnabled,
+        uint256 faucetAmount
     ) {
         return (
             name(),
@@ -342,7 +414,9 @@ contract BattleshipToken is ERC20, ERC20Pausable, Ownable, ReentrancyGuard {
             totalMinted,
             minter,
             paused(),
-            owner()
+            owner(),
+            faucetEnabled,
+            FAUCET_AMOUNT
         );
     }
 

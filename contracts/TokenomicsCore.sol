@@ -25,8 +25,9 @@ interface IStakingPool {
     function addRevenueToPool(address token, uint256 amount) external;
 }
 
-interface INFTManager {
-    function getRetiredShipCount(address owner) external view returns (uint256);
+interface IShipNFTManager {
+    function balanceOf(address owner) external view returns (uint256);
+    // For retired ship tracking, we'll use ship balance or add a specific function later
 }
 
 /**
@@ -68,7 +69,7 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
     IBattleshipToken public battleshipToken;
     IGameConfig public gameConfig;
     IStakingPool public stakingPool;
-    INFTManager public nftManager;
+    IShipNFTManager public shipNFTManager;
     address public teamTreasury;
     address public liquidityPool;
     
@@ -152,17 +153,17 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
     constructor(
         address _battleshipToken,
         address _gameConfig,
-        address _nftManager,
+        address _shipNFTManager,
         address _teamTreasury
     ) Ownable(msg.sender) {
         require(_battleshipToken != address(0), "TokenomicsCore: Invalid token address");
         require(_gameConfig != address(0), "TokenomicsCore: Invalid config address");
-        require(_nftManager != address(0), "TokenomicsCore: Invalid NFT manager address");
+        require(_shipNFTManager != address(0), "TokenomicsCore: Invalid ship NFT manager address");
         require(_teamTreasury != address(0), "TokenomicsCore: Invalid treasury address");
         
         battleshipToken = IBattleshipToken(_battleshipToken);
         gameConfig = IGameConfig(_gameConfig);
-        nftManager = INFTManager(_nftManager);
+        shipNFTManager = IShipNFTManager(_shipNFTManager);
         teamTreasury = _teamTreasury;
         
         genesisTimestamp = block.timestamp;
@@ -226,8 +227,9 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
         // Update epoch if needed
         _updateEpoch();
         
-        // Get retired ship count
-        uint256 retiredShipCount = nftManager.getRetiredShipCount(player);
+        // Get ship balance as proxy for retired ship tracking
+        // TODO: Add proper retired ship tracking function to ShipNFTManager
+        uint256 retiredShipCount = shipNFTManager.balanceOf(player);
         if (retiredShipCount > 0) {
             uint256 creditAmount = retiredShipCount.mul(RETIRED_SHIP_CREDIT);
             
@@ -929,8 +931,8 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
             gameConfig = IGameConfig(newAddress);
         } else if (nameHash == keccak256(abi.encodePacked("StakingPool"))) {
             stakingPool = IStakingPool(newAddress);
-        } else if (nameHash == keccak256(abi.encodePacked("NFTManager"))) {
-            nftManager = INFTManager(newAddress);
+        } else if (nameHash == keccak256(abi.encodePacked("ShipNFTManager"))) {
+            shipNFTManager = IShipNFTManager(newAddress);
         } else if (nameHash == keccak256(abi.encodePacked("TeamTreasury"))) {
             teamTreasury = newAddress;
         } else if (nameHash == keccak256(abi.encodePacked("LiquidityPool"))) {
