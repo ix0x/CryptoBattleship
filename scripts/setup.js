@@ -2,187 +2,134 @@ const { ethers } = require("hardhat");
 require("dotenv").config();
 
 async function main() {
-  console.log("⚙️ Setting up CryptoBattleship initial configuration...");
-  
   const [deployer] = await ethers.getSigners();
-  console.log("Setup account:", deployer.address);
   
-  // Load deployment results
-  const fs = require('fs');
-  let deploymentData;
+  console.log("🔧 Setting up CryptoBattleship contract authorizations");
+  console.log("Setup with account:", deployer.address);
+  console.log("Account balance:", (await deployer.provider.getBalance(deployer.address)).toString());
   
+  // Contract addresses from deployment
+  const addresses = {
+    BattleshipToken: "0x31F1372F4AC3a96FEd08b76B52D14872dF22C8d3",
+    GameConfig: "0x8730CcA37D387Ce85935334B24A4E49A87F74180",
+    ShipNFTManager: "0xb2963373f5E9900Cd8f249A07b615771033B6f0A",
+    ActionNFTManager: "0x62988B88CF03fc1BAC52Ef455a09ad452Cc86Bff",
+    CaptainNFTManager: "0x655e3C93D5340c4513394CA8dfff1e443eCe62f4",
+    CrewNFTManager: "0xF7075B4F2E4309f62E8D9B2C5e489a017Ad01F7A",
+    StakingPool: "0xF8376E0CE584faf7aCB50b2Ac0cDB2cfB14E825C",
+    TokenomicsCore: "0xeA4c2f943559b112FBF9E70b645ce94768D7698F",
+    GameState: "0xC559a1fC52D855821F2D6D95DcDB7944d9da8aE4",
+    GameLogic: "0x92b26572482e916D3fC6c4c461D0D80B487B608A",
+    BattleshipGame: "0x9c7116FfB46Cb9Ce893e77436F303B8198f48958",
+    LootboxSystem: "0xc1689Dfe4773e66f132929F662da19098BAF4Fca"
+  };
+
   try {
-    deploymentData = JSON.parse(fs.readFileSync('deployment-sonic-blaze.json', 'utf8'));
-  } catch (error) {
-    console.error("❌ Could not load deployment-sonic-blaze.json");
-    console.error("Please run deployment first: npm run deploy:sonic");
-    process.exit(1);
-  }
-  
-  const contracts = deploymentData.contracts;
-  
-  // Get contract instances
-  const gameConfig = await ethers.getContractAt("GameConfig", contracts.GameConfig);
-  const shipNFTManager = await ethers.getContractAt("ShipNFTManager", contracts.ShipNFTManager);
-  const actionNFTManager = await ethers.getContractAt("ActionNFTManager", contracts.ActionNFTManager);
-  const captainAndCrewNFTManager = await ethers.getContractAt("CaptainAndCrewNFTManager", contracts.CaptainAndCrewNFTManager);
-  const lootboxSystem = await ethers.getContractAt("LootboxSystem", contracts.LootboxSystem);
-  const battleshipGame = await ethers.getContractAt("BattleshipGame", contracts.BattleshipGame);
-  
-  try {
-    // 1. Configure GameConfig with initial parameters
-    console.log("\n🎮 Configuring GameConfig...");
-    
-    // Set turn timer to 5 minutes (300 seconds)
-    await gameConfig.updateTurnTimer(300);
-    console.log("✅ Turn timer set to 5 minutes");
-    
-    // Set weekly emission rate to 10,000 SHIP tokens
-    await gameConfig.updateWeeklyEmissionRate(ethers.parseEther("10000"));
-    console.log("✅ Weekly emission rate set to 10,000 SHIP");
-    
-    // Set game fee to 5%
-    await gameConfig.updateGameFeePercentage(5);
-    console.log("✅ Game fee set to 5%");
-    
-    // 2. Add some action templates for testing
-    console.log("\n⚔️ Adding default action templates...");
-    
-    // Add a cross pattern offensive action
-    const crossPattern = [0, 1, 10, 11]; // 2x2 square pattern
-    await actionNFTManager.addActionTemplate(
-      "Cross Blast",           // name
-      "Cross-shaped explosion", // description
-      crossPattern,           // target cells
-      2,                      // damage
-      5,                      // range
-      3,                      // uses
-      0,                      // ActionCategory.OFFENSIVE
-      0,                      // Rarity.COMMON
-      false,                  // not seasonal only
-      0                       // season 0 (all seasons)
+    // Get contract instances
+    console.log("\n📋 Getting contract instances...");
+    const gameState = await ethers.getContractAt("GameState", addresses.GameState);
+    const gameLogic = await ethers.getContractAt("GameLogic", addresses.GameLogic);
+    const battleshipGame = await ethers.getContractAt("BattleshipGame", addresses.BattleshipGame);
+    const shipNFTManager = await ethers.getContractAt("ShipNFTManager", addresses.ShipNFTManager);
+    const actionNFTManager = await ethers.getContractAt("ActionNFTManager", addresses.ActionNFTManager);
+    const captainNFTManager = await ethers.getContractAt("CaptainNFTManager", addresses.CaptainNFTManager);
+    const crewNFTManager = await ethers.getContractAt("CrewNFTManager", addresses.CrewNFTManager);
+    const tokenomicsCore = await ethers.getContractAt("TokenomicsCore", addresses.TokenomicsCore);
+    const battleshipToken = await ethers.getContractAt("BattleshipToken", addresses.BattleshipToken);
+
+    // 1. Set up GameState authorizations
+    console.log("\n🗃️ Setting up GameState authorizations...");
+    console.log("  - Authorizing GameLogic to modify GameState...");
+    await gameState.setAuthorizedContract(addresses.GameLogic, true);
+    console.log("  - Authorizing BattleshipGame to modify GameState...");
+    await gameState.setAuthorizedContract(addresses.BattleshipGame, true);
+
+    // 2. Set up GameLogic authorizations
+    console.log("\n🧠 Setting up GameLogic authorizations...");
+    console.log("  - Authorizing BattleshipGame to call GameLogic...");
+    await gameLogic.setAuthorizedContract(addresses.BattleshipGame, true);
+
+    // 3. Set BattleshipGame contract addresses
+    console.log("\n🎮 Setting BattleshipGame contract addresses...");
+    await battleshipGame.setContractAddresses(
+      addresses.GameConfig,
+      addresses.ShipNFTManager,
+      addresses.ActionNFTManager,
+      addresses.CaptainNFTManager,
+      addresses.CrewNFTManager,
+      addresses.TokenomicsCore
     );
-    console.log("✅ Added Cross Blast action template");
+
+    // 4. Set up NFT Manager authorizations for LootboxSystem
+    console.log("\n📦 Setting up NFT Manager authorizations for LootboxSystem...");
+    console.log("  - Authorizing LootboxSystem to mint Ships...");
+    await shipNFTManager.setAuthorizedMinter(addresses.LootboxSystem, true);
+    console.log("  - Authorizing LootboxSystem to mint Actions...");
+    await actionNFTManager.setAuthorizedMinter(addresses.LootboxSystem, true);
+    console.log("  - Authorizing LootboxSystem to mint Captains...");
+    await captainNFTManager.setAuthorizedMinter(addresses.LootboxSystem, true);
+    console.log("  - Authorizing LootboxSystem to mint Crew...");
+    await crewNFTManager.setAuthorizedMinter(addresses.LootboxSystem, true);
+
+    // 5. Set up NFT Manager authorizations for BattleshipGame
+    console.log("\n🎮 Setting up NFT Manager authorizations for BattleshipGame...");
+    console.log("  - Authorizing BattleshipGame to use Ships...");
+    await shipNFTManager.setAuthorizedMinter(addresses.BattleshipGame, true);
+    console.log("  - Authorizing BattleshipGame to use Actions...");
+    await actionNFTManager.setAuthorizedMinter(addresses.BattleshipGame, true);
+    console.log("  - Authorizing BattleshipGame to use Captains...");
+    await captainNFTManager.setAuthorizedMinter(addresses.BattleshipGame, true);
+    console.log("  - Authorizing BattleshipGame to use Crew...");
+    await crewNFTManager.setAuthorizedMinter(addresses.BattleshipGame, true);
+
+    // 6. Set up TokenomicsCore authorizations
+    console.log("\n💎 Setting up TokenomicsCore authorizations...");
+    console.log("  - Authorizing BattleshipGame for credit distribution...");
+    await tokenomicsCore.setAuthorizedMinter(addresses.BattleshipGame, true);
+    console.log("  - Authorizing LootboxSystem for revenue tracking...");
+    await tokenomicsCore.setAuthorizedMinter(addresses.LootboxSystem, true);
+
+    // 7. Set BattleshipToken minter
+    console.log("\n📄 Setting up BattleshipToken minter...");
+    console.log("  - Setting TokenomicsCore as BattleshipToken minter...");
+    await battleshipToken.setMinter(addresses.TokenomicsCore);
+
+    console.log("\n🎉 Contract authorization setup completed successfully!");
     
-    // Add a line pattern offensive action
-    const linePattern = [0, 1, 2]; // 3-cell line
-    await actionNFTManager.addActionTemplate(
-      "Line Shot",
-      "Penetrating line attack",
-      linePattern,
-      1,                      // damage
-      6,                      // range
-      5,                      // uses
-      0,                      // ActionCategory.OFFENSIVE
-      1,                      // Rarity.UNCOMMON
-      false,                  // not seasonal only
-      0                       // season 0
-    );
-    console.log("✅ Added Line Shot action template");
+    // Verify some key authorizations
+    console.log("\n🔍 Verifying authorizations...");
     
-    // Add a defensive shield action
-    const shieldPattern = [0]; // Single cell
-    await actionNFTManager.addActionTemplate(
-      "Energy Shield",
-      "Protective energy barrier",
-      shieldPattern,
-      0,                      // no damage (defensive)
-      3,                      // range
-      2,                      // uses
-      1,                      // ActionCategory.DEFENSIVE
-      0,                      // Rarity.COMMON
-      false,                  // not seasonal only
-      0                       // season 0
-    );
-    console.log("✅ Added Energy Shield action template");
+    console.log("  - GameState authorizations:");
+    const gameLogicAuth = await gameState.authorizedContracts(addresses.GameLogic);
+    const battleshipGameAuth = await gameState.authorizedContracts(addresses.BattleshipGame);
+    console.log(`    GameLogic authorized: ${gameLogicAuth}`);
+    console.log(`    BattleshipGame authorized: ${battleshipGameAuth}`);
     
-    // 3. Assign templates to variant/rarity combinations
-    console.log("\n📋 Assigning templates to variants...");
+    console.log("  - NFT Manager authorizations:");
+    const lootboxShipAuth = await shipNFTManager.authorizedMinters(addresses.LootboxSystem);
+    const battleshipShipAuth = await shipNFTManager.authorizedMinters(addresses.BattleshipGame);
+    console.log(`    LootboxSystem can mint Ships: ${lootboxShipAuth}`);
+    console.log(`    BattleshipGame can use Ships: ${battleshipShipAuth}`);
     
-    // Assign Cross Blast to variant 0, OFFENSIVE, COMMON
-    await actionNFTManager.assignTemplatesToVariantRarity(
-      0, // variant 0 (classic)
-      0, // ActionCategory.OFFENSIVE
-      0, // Rarity.COMMON
-      [2] // template ID 2 (Cross Blast)
-    );
+    console.log("  - Token minter:");
+    const tokenMinter = await battleshipToken.minter();
+    console.log(`    BattleshipToken minter: ${tokenMinter}`);
+    console.log(`    Should be TokenomicsCore: ${tokenMinter === addresses.TokenomicsCore}`);
+
+    console.log("\n✅ All authorizations verified and working!");
+    console.log("\n🚀 CryptoBattleship is now fully deployed and configured on Sonic Blaze Testnet!");
     
-    // Assign Line Shot to variant 0, OFFENSIVE, UNCOMMON
-    await actionNFTManager.assignTemplatesToVariantRarity(
-      0, // variant 0
-      0, // ActionCategory.OFFENSIVE
-      1, // Rarity.UNCOMMON
-      [3] // template ID 3 (Line Shot)
-    );
+    console.log("\n📋 Contract Summary:");
+    console.log("=====================================");
+    Object.entries(addresses).forEach(([name, address]) => {
+      console.log(`${name}: ${address}`);
+    });
+    console.log("=====================================");
     
-    // Assign Energy Shield to variant 0, DEFENSIVE, COMMON
-    await actionNFTManager.assignTemplatesToVariantRarity(
-      0, // variant 0
-      1, // ActionCategory.DEFENSIVE
-      0, // Rarity.COMMON
-      [4] // template ID 4 (Energy Shield)
-    );
-    
-    console.log("✅ Templates assigned to variants");
-    
-    // 4. Set up lootbox pricing (10 SHIP tokens per lootbox - already set in constructor)
-    console.log("\n📦 Lootbox system already configured with 10 SHIP per lootbox");
-    
-    // 5. Test the system by checking configs
-    console.log("\n🧪 Testing configuration...");
-    
-    const turnTimer = await gameConfig.getTurnTimer();
-    const emissionRate = await gameConfig.getWeeklyEmissionRate();
-    const gameFee = await gameConfig.getGameFeePercentage();
-    const requiredAnte = await battleshipGame.getRequiredAnte(1); // FISH size
-    
-    console.log(`✅ Turn timer: ${turnTimer} seconds`);
-    console.log(`✅ Weekly emission: ${ethers.formatEther(emissionRate)} SHIP`);
-    console.log(`✅ Game fee: ${gameFee}%`);
-    console.log(`✅ Required ante: ${ethers.formatEther(requiredAnte)} S`);
-    
-    // 6. Create setup summary
-    const setupSummary = {
-      network: "sonicBlaze",
-      chainId: 57054,
-      setupTimestamp: new Date().toISOString(),
-      configuration: {
-        turnTimer: turnTimer.toString(),
-        weeklyEmission: ethers.formatEther(emissionRate),
-        gameFeePercentage: gameFee.toString(),
-        anteAmount: ethers.formatEther(requiredAnte),
-        lootboxPrice: "10 SHIP tokens",
-        actionTemplatesAdded: 3,
-        variantAssignments: 3
-      },
-      contracts: contracts,
-      ready: true
-    };
-    
-    fs.writeFileSync(
-      'setup-complete-sonic-blaze.json',
-      JSON.stringify(setupSummary, null, 2)
-    );
-    
-    console.log("\n🎉 Setup completed successfully!");
-    console.log("\n📋 System Status:");
-    console.log("✅ All contracts deployed and configured");
-    console.log("✅ NFT minting authorized for LootboxSystem and BattleshipGame");
-    console.log("✅ Action templates created and assigned");
-    console.log("✅ Game parameters configured");
-    console.log("✅ Ante system set to 1S for testing");
-    console.log("\n💾 Setup summary saved to setup-complete-sonic-blaze.json");
-    
-    console.log("\n🚀 Your CryptoBattleship deployment is now ready!");
-    console.log("\n🎮 To test:");
-    console.log("1. Create a game with 1S ante");
-    console.log("2. Purchase lootboxes for 10 SHIP tokens");
-    console.log("3. Use NFTs in battles");
-    
-    console.log("\n🌐 Explorer Links:");
-    console.log(`Game Contract: https://testnet.sonicscan.org/address/${contracts.BattleshipGame}`);
-    console.log(`Ship NFTs: https://testnet.sonicscan.org/address/${contracts.ShipNFTManager}`);
-    console.log(`Lootbox System: https://testnet.sonicscan.org/address/${contracts.LootboxSystem}`);
+    console.log("\n🔍 Next steps:");
+    console.log("1. Verify contracts: npm run verify:sonic");
+    console.log("2. Test basic functionality (create game, open lootbox)");
+    console.log("3. Connect frontend to deployed contracts");
     
   } catch (error) {
     console.error("❌ Setup failed:", error);

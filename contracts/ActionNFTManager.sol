@@ -4,8 +4,8 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
@@ -209,7 +209,7 @@ contract ActionNFTManager is ERC721, ERC721Enumerable, Ownable, Pausable, Reentr
         // Select template pseudo-randomly
         uint8 templateId = availableTemplates[uint256(keccak256(abi.encodePacked(
             block.timestamp, 
-            block.difficulty, 
+            block.prevrandao, 
             recipient, 
             _nextTokenId
         ))) % availableTemplates.length];
@@ -545,11 +545,20 @@ contract ActionNFTManager is ERC721, ERC721Enumerable, Ownable, Pausable, Reentr
         return super.supportsInterface(interfaceId);
     }
 
-    function _beforeTokenTransfer(address from, address to, uint256 tokenId, uint256 batchSize)
+    // Required overrides for ERC721 + ERC721Enumerable in OpenZeppelin v5
+    function _update(address to, uint256 tokenId, address auth)
+        internal
+        override(ERC721, ERC721Enumerable)
+        returns (address)
+    {
+        return super._update(to, tokenId, auth);
+    }
+
+    function _increaseBalance(address account, uint128 value)
         internal
         override(ERC721, ERC721Enumerable)
     {
-        super._beforeTokenTransfer(from, to, tokenId, batchSize);
+        super._increaseBalance(account, value);
     }
 
     function tokenURI(uint256 tokenId) public view override returns (string memory) {

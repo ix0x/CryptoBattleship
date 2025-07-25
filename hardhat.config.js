@@ -9,8 +9,15 @@ module.exports = {
     settings: {
       optimizer: {
         enabled: true,
-        runs: 200,
+        runs: 1, // Reduced runs to minimize contract size
+        details: {
+          yul: true,
+          yulDetails: {
+            stackAllocation: true,
+          }
+        }
       },
+      viaIR: true,
     },
   },
   networks: {
@@ -25,20 +32,19 @@ module.exports = {
       url: "https://rpc.blaze.soniclabs.com",
       chainId: 57054,
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-      gasPrice: 1000000000, // 1 gwei
+      gasPrice: 20000000000, // 20 gwei (increased for Sonic network)
     },
   },
   etherscan: {
-    apiKey: {
-      sonicBlaze: "placeholder", // Sonic may not need API key for verification
-    },
+    // Etherscan V2 API - single API key for all networks
+    apiKey: process.env.ETHERSCAN_API_KEY || "placeholder",
     customChains: [
       {
         network: "sonicBlaze",
         chainId: 57054,
         urls: {
-          apiURL: "https://testnet.sonicscan.org/api",
-          browserURL: "https://testnet.sonicscan.org",
+          apiURL: "https://api.testnet.sonicscan.org/api",
+          browserURL: "https://testnet.sonicscan.org/",
         },
       },
     ],

@@ -21,7 +21,7 @@ async function main() {
     // 1. Deploy BattleshipToken
     console.log("\n📄 Deploying BattleshipToken...");
     const BattleshipToken = await ethers.getContractFactory("BattleshipToken");
-    const battleshipToken = await BattleshipToken.deploy(INITIAL_ADMIN);
+    const battleshipToken = await BattleshipToken.deploy(INITIAL_ADMIN, TEAM_TREASURY);
     await battleshipToken.waitForDeployment();
     const battleshipTokenAddress = await battleshipToken.getAddress();
     deploymentResults.BattleshipToken = battleshipTokenAddress;
@@ -53,13 +53,21 @@ async function main() {
     deploymentResults.ActionNFTManager = actionNFTManagerAddress;
     console.log("✅ ActionNFTManager deployed to:", actionNFTManagerAddress);
     
-    console.log("\n👥 Deploying CaptainAndCrewNFTManager...");
-    const CaptainAndCrewNFTManager = await ethers.getContractFactory("CaptainAndCrewNFTManager");
-    const captainAndCrewNFTManager = await CaptainAndCrewNFTManager.deploy(INITIAL_ADMIN);
-    await captainAndCrewNFTManager.waitForDeployment();
-    const captainAndCrewNFTManagerAddress = await captainAndCrewNFTManager.getAddress();
-    deploymentResults.CaptainAndCrewNFTManager = captainAndCrewNFTManagerAddress;
-    console.log("✅ CaptainAndCrewNFTManager deployed to:", captainAndCrewNFTManagerAddress);
+    console.log("\n👑 Deploying CaptainNFTManager...");
+    const CaptainNFTManager = await ethers.getContractFactory("CaptainNFTManager");
+    const captainNFTManager = await CaptainNFTManager.deploy(INITIAL_ADMIN);
+    await captainNFTManager.waitForDeployment();
+    const captainNFTManagerAddress = await captainNFTManager.getAddress();
+    deploymentResults.CaptainNFTManager = captainNFTManagerAddress;
+    console.log("✅ CaptainNFTManager deployed to:", captainNFTManagerAddress);
+    
+    console.log("\n👥 Deploying CrewNFTManager...");
+    const CrewNFTManager = await ethers.getContractFactory("CrewNFTManager");
+    const crewNFTManager = await CrewNFTManager.deploy(INITIAL_ADMIN);
+    await crewNFTManager.waitForDeployment();
+    const crewNFTManagerAddress = await crewNFTManager.getAddress();
+    deploymentResults.CrewNFTManager = crewNFTManagerAddress;
+    console.log("✅ CrewNFTManager deployed to:", crewNFTManagerAddress);
     
     // 4. Deploy StakingPool
     console.log("\n💰 Deploying StakingPool...");
@@ -84,14 +92,36 @@ async function main() {
     deploymentResults.TokenomicsCore = tokenomicsCoreAddress;
     console.log("✅ TokenomicsCore deployed to:", tokenomicsCoreAddress);
     
-    // 6. Deploy BattleshipGame
+    // 6. Deploy Game Architecture (GameState, GameLogic, BattleshipGame)
+    console.log("\n🗃️ Deploying GameState...");
+    const GameState = await ethers.getContractFactory("GameState");
+    const gameState = await GameState.deploy(INITIAL_ADMIN);
+    await gameState.waitForDeployment();
+    const gameStateAddress = await gameState.getAddress();
+    deploymentResults.GameState = gameStateAddress;
+    console.log("✅ GameState deployed to:", gameStateAddress);
+    
+    console.log("\n🧠 Deploying GameLogic...");
+    const GameLogic = await ethers.getContractFactory("GameLogic");
+    const gameLogic = await GameLogic.deploy(
+      INITIAL_ADMIN,
+      gameStateAddress,
+      gameConfigAddress,
+      captainNFTManagerAddress,
+      crewNFTManagerAddress
+    );
+    await gameLogic.waitForDeployment();
+    const gameLogicAddress = await gameLogic.getAddress();
+    deploymentResults.GameLogic = gameLogicAddress;
+    console.log("✅ GameLogic deployed to:", gameLogicAddress);
+    
     console.log("\n🎮 Deploying BattleshipGame...");
     const BattleshipGame = await ethers.getContractFactory("BattleshipGame");
     const battleshipGame = await BattleshipGame.deploy(
       INITIAL_ADMIN,
-      shipNFTManagerAddress,
-      actionNFTManagerAddress,
-      captainAndCrewNFTManagerAddress
+      gameStateAddress,
+      gameLogicAddress,
+      gameConfigAddress
     );
     await battleshipGame.waitForDeployment();
     const battleshipGameAddress = await battleshipGame.getAddress();
@@ -106,7 +136,8 @@ async function main() {
       tokenomicsCoreAddress,
       shipNFTManagerAddress,
       actionNFTManagerAddress,
-      captainAndCrewNFTManagerAddress,
+      captainNFTManagerAddress,
+      crewNFTManagerAddress,
       gameConfigAddress
     );
     await lootboxSystem.waitForDeployment();
@@ -117,13 +148,23 @@ async function main() {
     // 8. Set up contract integrations
     console.log("\n🔧 Setting up contract integrations...");
     
+    // Set up GameState authorizations
+    console.log("Setting up GameState authorizations...");
+    await gameState.setAuthorizedContract(gameLogicAddress, true);
+    await gameState.setAuthorizedContract(battleshipGameAddress, true);
+    
+    // Set up GameLogic authorizations
+    console.log("Setting up GameLogic authorizations...");
+    await gameLogic.setAuthorizedContract(battleshipGameAddress, true);
+    
     // Set BattleshipGame contract addresses
     console.log("Setting BattleshipGame contract addresses...");
     await battleshipGame.setContractAddresses(
       gameConfigAddress,
       shipNFTManagerAddress,
       actionNFTManagerAddress,
-      captainAndCrewNFTManagerAddress,
+      captainNFTManagerAddress,
+      crewNFTManagerAddress,
       tokenomicsCoreAddress
     );
     
@@ -131,19 +172,21 @@ async function main() {
     console.log("Setting up authorized minters...");
     await shipNFTManager.setAuthorizedMinter(lootboxSystemAddress, true);
     await actionNFTManager.setAuthorizedMinter(lootboxSystemAddress, true);
-    await captainAndCrewNFTManager.setAuthorizedMinter(lootboxSystemAddress, true);
+    await captainNFTManager.setAuthorizedMinter(lootboxSystemAddress, true);
+    await crewNFTManager.setAuthorizedMinter(lootboxSystemAddress, true);
     
     // Set BattleshipGame as authorized for ship operations
     await shipNFTManager.setAuthorizedMinter(battleshipGameAddress, true);
     await actionNFTManager.setAuthorizedMinter(battleshipGameAddress, true);
-    await captainAndCrewNFTManager.setAuthorizedMinter(battleshipGameAddress, true);
+    await captainNFTManager.setAuthorizedMinter(battleshipGameAddress, true);
+    await crewNFTManager.setAuthorizedMinter(battleshipGameAddress, true);
     
     // Set TokenomicsCore authorized minters
     await tokenomicsCore.setAuthorizedMinter(battleshipGameAddress, true);
     await tokenomicsCore.setAuthorizedMinter(lootboxSystemAddress, true);
     
     // Set BattleshipToken minter
-    await battleshipToken.setMinter(tokenomicsCoreAddress, true);
+    await battleshipToken.setMinter(tokenomicsCoreAddress);
     
     console.log("\n🎉 Deployment completed successfully!");
     console.log("\n📋 Contract Addresses:");

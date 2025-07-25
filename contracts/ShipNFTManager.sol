@@ -4,8 +4,8 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
 /**
@@ -556,17 +556,17 @@ contract ShipNFTManager is ERC721, ERC721Enumerable, Ownable, Pausable, Reentran
         
         // Apply variant modifiers
         ShipVariant memory variant = variants[variantId];
-        stats.health = uint8(_applyMod(int16(stats.health), variant.statMods.healthMod));
-        stats.speed = uint8(_applyMod(int16(stats.speed), variant.statMods.speedMod));
-        stats.shields = uint8(_applyMod(int16(stats.shields), variant.statMods.shieldsMod));
-        stats.firepower = uint8(_applyMod(int16(stats.firepower), variant.statMods.firepowerMod));
-        stats.range = uint8(_applyMod(int16(stats.range), variant.statMods.rangeMod));
-        stats.armor = uint8(_applyMod(int16(stats.armor), variant.statMods.armorMod));
-        stats.stealth = uint8(_applyMod(int16(stats.stealth), variant.statMods.stealthMod));
+        stats.health = uint8(uint16(_applyMod(int16(uint16(stats.health)), variant.statMods.healthMod)));
+        stats.speed = uint8(uint16(_applyMod(int16(uint16(stats.speed)), variant.statMods.speedMod)));
+        stats.shields = uint8(uint16(_applyMod(int16(uint16(stats.shields)), variant.statMods.shieldsMod)));
+        stats.firepower = uint8(uint16(_applyMod(int16(uint16(stats.firepower)), variant.statMods.firepowerMod)));
+        stats.range = uint8(uint16(_applyMod(int16(uint16(stats.range)), variant.statMods.rangeMod)));
+        stats.armor = uint8(uint16(_applyMod(int16(uint16(stats.armor)), variant.statMods.armorMod)));
+        stats.stealth = uint8(uint16(_applyMod(int16(uint16(stats.stealth)), variant.statMods.stealthMod)));
     }
 
-    function _applyMod(int16 baseStat, int8 modifier) internal pure returns (int16) {
-        int16 result = baseStat + int16(modifier);
+    function _applyMod(int16 baseStat, int8 statModifier) internal pure returns (int16) {
+        int16 result = baseStat + int16(statModifier);
         return result < 0 ? int16(0) : result;
     }
 
@@ -612,7 +612,7 @@ contract ShipNFTManager is ERC721, ERC721Enumerable, Ownable, Pausable, Reentran
             '<g transform="translate(150, 170)">',
             '<rect x="-60" y="-20" width="120" height="40" fill="', rarityColor, '" opacity="0.8" rx="5"/>',
             '<circle cx="0" cy="0" r="15" fill="#fff" opacity="0.9"/>',
-            '<text x="0" y="5" text-anchor="middle" fill="#000" font-size="12">⚓</text>',
+            '<text x="0" y="5" text-anchor="middle" fill="#000" font-size="12">[S]</text>',
             '</g>'
         ));
     }
@@ -648,11 +648,20 @@ contract ShipNFTManager is ERC721, ERC721Enumerable, Ownable, Pausable, Reentran
         return super.supportsInterface(interfaceId);
     }
 
-    function _beforeTokenTransfer(address from, address to, uint256 tokenId, uint256 batchSize)
+    // Required overrides for ERC721 + ERC721Enumerable in OpenZeppelin v5
+    function _update(address to, uint256 tokenId, address auth)
+        internal
+        override(ERC721, ERC721Enumerable)
+        returns (address)
+    {
+        return super._update(to, tokenId, auth);
+    }
+
+    function _increaseBalance(address account, uint128 value)
         internal
         override(ERC721, ERC721Enumerable)
     {
-        super._beforeTokenTransfer(from, to, tokenId, batchSize);
+        super._increaseBalance(account, value);
     }
 
     function tokenURI(uint256 tokenId) public view override returns (string memory) {

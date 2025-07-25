@@ -2,11 +2,17 @@
 
 import { useState } from 'react'
 import { Coins, Info, Lock, Zap } from 'lucide-react'
+import { useTokenBalance } from '@/hooks/useTokenBalance'
+import { useStaking } from '@/hooks/useStaking'
+import { useAccount } from 'wagmi'
+import ConnectWallet from './ConnectWallet'
 
 export default function StakeForm() {
   const [amount, setAmount] = useState('')
   const [lockPeriod, setLockPeriod] = useState('1') // weeks
-  const [isLoading, setIsLoading] = useState(false)
+  const { isConnected } = useAccount()
+  const { balance, isLoading: balanceLoading } = useTokenBalance()
+  const { stakeTokens, isStaking, isStakeConfirmed, stakeError } = useStaking()
 
   const lockOptions = [
     { weeks: '1', multiplier: '1.0x', label: '1 Week' },
@@ -20,16 +26,24 @@ export default function StakeForm() {
   const estimatedRewards = amount ? (parseFloat(amount) * 0.15 * parseFloat(selectedOption?.multiplier || '1')).toFixed(2) : '0'
 
   const handleStake = async () => {
-    if (!amount || parseFloat(amount) <= 0) return
+    if (!amount || parseFloat(amount) <= 0 || !isConnected) return
     
-    setIsLoading(true)
-    // Simulate transaction
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    setIsLoading(false)
-    
-    // Reset form
-    setAmount('')
-    setLockPeriod('1')
+    try {
+      await stakeTokens(amount, parseInt(lockPeriod))
+      // Reset form on success
+      if (isStakeConfirmed) {
+        setAmount('')
+        setLockPeriod('1')
+      }
+    } catch (error) {
+      console.error('Staking failed:', error)
+    }
+  }
+
+  const setMaxAmount = () => {
+    if (balance && !balanceLoading) {
+      setAmount(balance)
+    }
   }
 
   return (
@@ -60,14 +74,20 @@ export default function StakeForm() {
             />
             <div className="absolute right-3 top-3 flex items-center space-x-2">
               <span className="text-card-foreground/70 text-sm">SHIP</span>
-              <button className="text-primary text-sm hover:text-primary/80 transition-colors">
+              <button 
+                onClick={setMaxAmount}
+                disabled={!isConnected || balanceLoading}
+                className="text-primary text-sm hover:text-primary/80 transition-colors disabled:opacity-50"
+              >
                 MAX
               </button>
             </div>
           </div>
           <div className="flex justify-between mt-2 text-sm">
-            <span className="text-card-foreground/60">Available: 25,000 SHIP</span>
-            <span className="text-card-foreground/60">≈ $2,500 USD</span>
+            <span className="text-card-foreground/60">
+              Available: {balanceLoading ? 'Loading...' : `${parseFloat(balance).toFixed(2)} SHIP`}
+            </span>
+            <span className="text-card-foreground/60">≈ ${(parseFloat(balance) * 0.1).toFixed(2)} USD</span>
           </div>
         </div>
 
@@ -127,36 +147,51 @@ export default function StakeForm() {
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex gap-3">
-          <button
-            onClick={handleStake}
-            disabled={!amount || parseFloat(amount) <= 0 || isLoading}
-            className="flex-1 flex items-center justify-center space-x-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-semibold"
-          >
-            {isLoading ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-foreground border-t-transparent"></div>
-                <span>Staking...</span>
-              </>
-            ) : (
-              <>
-                <Lock className="h-4 w-4" />
-                <span>Stake SHIP</span>
-              </>
-            )}
-          </button>
+        {/* Error Display */}
+        {stakeError && (
+          <div className="p-3 bg-error/10 border border-error/20 rounded-lg">
+            <p className="text-error text-sm">
+              Error: {(stakeError as Error)?.message || 'Transaction failed'}
+            </p>
+          </div>
+        )}
+
+        {!isConnected ? (
+          <div className="text-center">
+            <ConnectWallet />
+          </div>
+        ) : (
+          /* Action Buttons */
+          <div className="flex gap-3">
+            <button
+              onClick={handleStake}
+              disabled={!amount || parseFloat(amount) <= 0 || isStaking || parseFloat(amount) > parseFloat(balance)}
+              className="flex-1 flex items-center justify-center space-x-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-semibold"
+            >
+              {isStaking ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-foreground border-t-transparent"></div>
+                  <span>Staking...</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="h-4 w-4" />
+                  <span>Stake SHIP</span>
+                </>
+              )}
+            </button>
           
-          <button 
-            className="px-6 py-3 bg-secondary text-secondary-foreground border border-border rounded-lg hover:bg-secondary/80 transition-colors font-semibold"
-            onClick={() => {
-              setAmount('')
-              setLockPeriod('1')
-            }}
-          >
-            Reset
-          </button>
-        </div>
+            <button 
+              className="px-6 py-3 bg-secondary text-secondary-foreground border border-border rounded-lg hover:bg-secondary/80 transition-colors font-semibold"
+              onClick={() => {
+                setAmount('')
+                setLockPeriod('1')
+              }}
+            >
+              Reset
+            </button>
+          </div>
+        )}
 
         {/* Additional Info */}
         <div className="text-xs text-card-foreground/60 space-y-1">

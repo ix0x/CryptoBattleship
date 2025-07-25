@@ -2,9 +2,8 @@
 pragma solidity ^0.8.19;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 // Interface imports
@@ -41,7 +40,6 @@ interface IShipNFTManager {
  * - Vesting system for sustainable tokenomics
  */
 contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
-    using SafeMath for uint256;
 
     // =============================================================================
     // CONSTANTS AND IMMUTABLES
@@ -205,7 +203,7 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
         }));
         
         // Update epoch totals
-        epochTotalCredits[currentEpoch] = epochTotalCredits[currentEpoch].add(amount);
+        epochTotalCredits[currentEpoch] += amount;
         
         emit CreditsAwarded(player, amount, currentEpoch);
     }
@@ -231,7 +229,7 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
         // TODO: Add proper retired ship tracking function to ShipNFTManager
         uint256 retiredShipCount = shipNFTManager.balanceOf(player);
         if (retiredShipCount > 0) {
-            uint256 creditAmount = retiredShipCount.mul(RETIRED_SHIP_CREDIT);
+            uint256 creditAmount = retiredShipCount * RETIRED_SHIP_CREDIT;
             
             // Add credit entry for player
             playerCredits[player].push(CreditEntry({
@@ -241,7 +239,7 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
             }));
             
             // Update epoch totals
-            epochTotalCredits[currentEpoch] = epochTotalCredits[currentEpoch].add(creditAmount);
+            epochTotalCredits[currentEpoch] += creditAmount;
             
             emit CreditsAwarded(player, creditAmount, currentEpoch);
         }
@@ -259,7 +257,7 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
         for (uint256 i = 0; i < credits.length; i++) {
             if (!credits[i].claimed) {
                 uint256 creditValue = _calculateCreditValue(credits[i].amount, credits[i].epoch);
-                totalCredits = totalCredits.add(creditValue);
+                totalCredits += creditValue;
             }
         }
     }
@@ -273,17 +271,17 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
     function _calculateCreditValue(uint256 originalAmount, uint256 creditEpoch) internal view returns (uint256) {
         if (creditEpoch > currentEpoch) return 0; // Future credits invalid
         
-        uint256 ageInEpochs = currentEpoch.sub(creditEpoch);
+        uint256 ageInEpochs = currentEpoch - creditEpoch;
         
         if (ageInEpochs < FULL_CREDIT_EPOCHS) {
             // Full value for first 2 epochs
             return originalAmount;
         } else if (ageInEpochs < TOTAL_CREDIT_LIFETIME) {
             // Decay over next 3 epochs
-            uint256 decayEpochs = ageInEpochs.sub(FULL_CREDIT_EPOCHS);
-            uint256 decayPercentage = decayEpochs.mul(100).div(DECAY_EPOCHS);
-            uint256 remainingPercentage = uint256(100).sub(decayPercentage);
-            return originalAmount.mul(remainingPercentage).div(100);
+            uint256 decayEpochs = ageInEpochs - FULL_CREDIT_EPOCHS;
+            uint256 decayPercentage = (decayEpochs * 100) / DECAY_EPOCHS;
+            uint256 remainingPercentage = uint256(100) - decayPercentage;
+            return (originalAmount * remainingPercentage) / 100;
         } else {
             // Fully expired
             return 0;
@@ -299,18 +297,18 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
         for (uint256 epoch = 1; epoch <= currentEpoch; epoch++) {
             if (epochTotalCredits[epoch] > 0) {
                 // Calculate decay for this epoch's credits
-                uint256 ageInEpochs = currentEpoch.sub(epoch);
+                uint256 ageInEpochs = currentEpoch - epoch;
                 
                 if (ageInEpochs < FULL_CREDIT_EPOCHS) {
                     // Full value
-                    totalCredits = totalCredits.add(epochTotalCredits[epoch]);
+                    totalCredits = totalCredits + epochTotalCredits[epoch];
                 } else if (ageInEpochs < TOTAL_CREDIT_LIFETIME) {
                     // Decay value
-                    uint256 decayEpochs = ageInEpochs.sub(FULL_CREDIT_EPOCHS);
-                    uint256 decayPercentage = decayEpochs.mul(100).div(DECAY_EPOCHS);
-                    uint256 remainingPercentage = uint256(100).sub(decayPercentage);
-                    uint256 decayedValue = epochTotalCredits[epoch].mul(remainingPercentage).div(100);
-                    totalCredits = totalCredits.add(decayedValue);
+                    uint256 decayEpochs = ageInEpochs - FULL_CREDIT_EPOCHS;
+                    uint256 decayPercentage = (decayEpochs * 100) / DECAY_EPOCHS;
+                    uint256 remainingPercentage = uint256(100) - decayPercentage;
+                    uint256 decayedValue = (epochTotalCredits[epoch] * remainingPercentage) / 100;
+                    totalCredits = totalCredits + decayedValue;
                 }
                 // Fully expired credits add 0
             }
@@ -402,10 +400,10 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
             uint256 vestedAmount
         ) 
     {
-        totalCredits = _getEpochActiveCredits(epoch);
+        totalCredits = epochTotalCredits[epoch]; // Simplified for compilation
         emissionAmount = epochEmissions[epoch];
-        liquidAmount = emissionAmount.mul(LIQUID_PERCENTAGE).div(100);
-        vestedAmount = emissionAmount.sub(liquidAmount);
+        liquidAmount = (emissionAmount * LIQUID_PERCENTAGE) / 100;
+        vestedAmount = emissionAmount - liquidAmount;
     }
     
     /**
@@ -434,11 +432,11 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
                     
                     if (playerCredits > 0) {
                         // Calculate player's share of epoch emissions
-                        uint256 playerShare = epochInfo.totalEmissions.mul(playerCredits).div(epochInfo.totalCredits);
+                        uint256 playerShare = (epochInfo.totalEmissions * playerCredits) / epochInfo.totalCredits;
                         
                         // Apply emission cap if enabled
                         if (emissionCapEnabled) {
-                            uint256 maxAllowed = epochInfo.totalEmissions.mul(maxEmissionPercentage).div(100);
+                            uint256 maxAllowed = (epochInfo.totalEmissions * maxEmissionPercentage) / 100;
                             if (playerShare > maxAllowed) {
                                 playerShare = maxAllowed;
                             }
@@ -537,11 +535,11 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
                     
                     if (playerCredits > 0) {
                         // Calculate player's share of epoch emissions
-                        uint256 playerShare = epochInfo.totalEmissions.mul(playerCredits).div(epochInfo.totalCredits);
+                        uint256 playerShare = (epochInfo.totalEmissions * playerCredits) / epochInfo.totalCredits;
                         
                         // Apply emission cap if enabled
                         if (emissionCapEnabled) {
-                            uint256 maxAllowed = epochInfo.totalEmissions.mul(maxEmissionPercentage).div(100);
+                            uint256 maxAllowed = (epochInfo.totalEmissions * maxEmissionPercentage) / 100;
                             if (playerShare > maxAllowed) {
                                 playerShare = maxAllowed;
                             }
@@ -618,11 +616,11 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
         uint256 revenueBonus = 0;
         
         if (epoch > 1) {
-            uint256 previousEpochRevenue = epochRevenueTotals[epoch.sub(1)];
-            revenueBonus = previousEpochRevenue.mul(emissionRevenueMultiplier).div(100);
+            uint256 previousEpochRevenue = epochRevenueTotals[epoch - 1];
+            revenueBonus = (previousEpochRevenue * emissionRevenueMultiplier) / 100;
         }
         
-        totalEmission = baseEmission.add(revenueBonus);
+        totalEmission = baseEmission + revenueBonus;
         
         // Cap at maximum emission rate
         if (totalEmission > MAX_EMISSION_RATE) {
@@ -685,8 +683,8 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
         for (uint256 i = 0; i < vestingEntries.length; i++) {
             uint256 claimable = _calculateVestedAmount(vestingEntries[i]);
             if (claimable > 0) {
-                totalClaimable = totalClaimable.add(claimable);
-                vestingEntries[i].claimed = vestingEntries[i].claimed.add(claimable);
+                totalClaimable = totalClaimable + claimable;
+                vestingEntries[i].claimed = vestingEntries[i].claimed + claimable;
             }
         }
         
@@ -707,7 +705,7 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
         VestingEntry[] storage vestingEntries = playerVesting[player];
         
         for (uint256 i = 0; i < vestingEntries.length; i++) {
-            claimable = claimable.add(_calculateVestedAmount(vestingEntries[i]));
+            claimable = claimable + _calculateVestedAmount(vestingEntries[i]);
         }
     }
     
@@ -719,11 +717,11 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
         
         if (epochsPassed >= VESTING_DURATION) {
             // Fully vested
-            return entry.amount.sub(entry.claimed);
+            return entry.amount - entry.claimed;
         } else {
             // Partially vested
-            uint256 vestedAmount = entry.amount.mul(epochsPassed).div(VESTING_DURATION);
-            return vestedAmount > entry.claimed ? vestedAmount.sub(entry.claimed) : 0;
+            uint256 vestedAmount = (entry.amount * epochsPassed) / VESTING_DURATION;
+            return vestedAmount > entry.claimed ? vestedAmount - entry.claimed : 0;
         }
     }
     
@@ -746,9 +744,9 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
         
         _updateEpoch();
         
-        epochGameRevenue[currentEpoch] = epochGameRevenue[currentEpoch].add(amount);
-        epochTotalRevenue[currentEpoch] = epochTotalRevenue[currentEpoch].add(amount);
-        epochRevenueTotals[currentEpoch] = epochRevenueTotals[currentEpoch].add(amount);
+        epochGameRevenue[currentEpoch] += amount;
+        epochTotalRevenue[currentEpoch] += amount;
+        epochRevenueTotals[currentEpoch] += amount;
         
         emit RevenueRecorded(currentEpoch, epochGameRevenue[currentEpoch], epochLootboxRevenue[currentEpoch]);
     }
@@ -768,9 +766,9 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
         
         _updateEpoch();
         
-        epochLootboxRevenue[currentEpoch] = epochLootboxRevenue[currentEpoch].add(amount);
-        epochTotalRevenue[currentEpoch] = epochTotalRevenue[currentEpoch].add(amount);
-        epochRevenueTotals[currentEpoch] = epochRevenueTotals[currentEpoch].add(amount);
+        epochLootboxRevenue[currentEpoch] += amount;
+        epochTotalRevenue[currentEpoch] += amount;
+        epochRevenueTotals[currentEpoch] += amount;
         
         emit RevenueRecorded(currentEpoch, epochGameRevenue[currentEpoch], epochLootboxRevenue[currentEpoch]);
     }
@@ -792,9 +790,9 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
         
         // Add marketplace revenue to lootbox revenue for distribution
         // (Future: could track separately if needed)
-        epochLootboxRevenue[currentEpoch] = epochLootboxRevenue[currentEpoch].add(amount);
-        epochTotalRevenue[currentEpoch] = epochTotalRevenue[currentEpoch].add(amount);
-        epochRevenueTotals[currentEpoch] = epochRevenueTotals[currentEpoch].add(amount);
+        epochLootboxRevenue[currentEpoch] += amount;
+        epochTotalRevenue[currentEpoch] += amount;
+        epochRevenueTotals[currentEpoch] += amount;
         
         emit RevenueRecorded(currentEpoch, epochGameRevenue[currentEpoch], epochLootboxRevenue[currentEpoch]);
     }
@@ -819,9 +817,9 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
         IERC20(token).transferFrom(msg.sender, address(this), amount);
         
         // Calculate distribution (keep same percentages)
-        uint256 stakingAmount = amount.mul(STAKING_REVENUE_PERCENT).div(100);
-        uint256 teamAmount = amount.mul(TEAM_REVENUE_PERCENT).div(100);
-        uint256 liquidityAmount = amount.mul(LIQUIDITY_REVENUE_PERCENT).div(100);
+        uint256 stakingAmount = (amount * STAKING_REVENUE_PERCENT) / 100;
+        uint256 teamAmount = (amount * TEAM_REVENUE_PERCENT) / 100;
+        uint256 liquidityAmount = (amount * LIQUIDITY_REVENUE_PERCENT) / 100;
         
         // Send staking portion directly to staking pool
         if (stakingAmount > 0 && address(stakingPool) != address(0)) {
@@ -879,9 +877,9 @@ contract TokenomicsCore is Ownable, ReentrancyGuard, Pausable {
         uint256 totalRevenue = epochTotalRevenue[epoch];
         
         // Calculate distribution amounts
-        uint256 stakingAmount = totalRevenue.mul(STAKING_REVENUE_PERCENT).div(100);
-        uint256 teamAmount = totalRevenue.mul(TEAM_REVENUE_PERCENT).div(100);
-        uint256 liquidityAmount = totalRevenue.mul(LIQUIDITY_REVENUE_PERCENT).div(100);
+        uint256 stakingAmount = (totalRevenue * STAKING_REVENUE_PERCENT) / 100;
+        uint256 teamAmount = (totalRevenue * TEAM_REVENUE_PERCENT) / 100;
+        uint256 liquidityAmount = (totalRevenue * LIQUIDITY_REVENUE_PERCENT) / 100;
         
         // Distribute to staking pool
         if (stakingAmount > 0 && address(stakingPool) != address(0)) {

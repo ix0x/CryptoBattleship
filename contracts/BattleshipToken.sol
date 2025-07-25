@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Pausable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title BattleshipToken (SHIP)
@@ -56,12 +56,12 @@ contract BattleshipToken is ERC20, ERC20Pausable, Ownable, ReentrancyGuard {
      */
     constructor(address _initialAdmin, address _initialSupplyRecipient) 
         ERC20("SHIP", "SHIP") 
+        Ownable(_initialAdmin)
     {
         require(_initialAdmin != address(0), "BattleshipToken: Initial admin cannot be zero address");
         require(_initialSupplyRecipient != address(0), "BattleshipToken: Initial supply recipient cannot be zero address");
         
-        // Set contract deployer as owner (OpenZeppelin Ownable)
-        _transferOwnership(_initialAdmin);
+        // Owner is set by Ownable constructor
         
         // Mint initial supply to designated recipient
         _mint(_initialSupplyRecipient, TOTAL_SUPPLY);
@@ -116,14 +116,13 @@ contract BattleshipToken is ERC20, ERC20Pausable, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev Override required by Solidity for multiple inheritance
+     * @dev Override required by Solidity for multiple inheritance (OpenZeppelin v5)
      */
-    function _beforeTokenTransfer(
-        address from,
-        address to,
-        uint256 amount
-    ) internal override(ERC20, ERC20Pausable) {
-        super._beforeTokenTransfer(from, to, amount);
+    function _update(address from, address to, uint256 amount) 
+        internal 
+        override(ERC20, ERC20Pausable) 
+    {
+        super._update(from, to, amount);
     }
 
     /**
@@ -392,7 +391,6 @@ contract BattleshipToken is ERC20, ERC20Pausable, Ownable, ReentrancyGuard {
 
     /**
      * @dev Get comprehensive contract state for frontend integration
-     * @return contractInfo Struct containing all key contract information
      */
     function getContractState() external view returns (
         string memory name,
@@ -407,14 +405,14 @@ contract BattleshipToken is ERC20, ERC20Pausable, Ownable, ReentrancyGuard {
         uint256 faucetAmount
     ) {
         return (
-            name(),
-            symbol(),
-            decimals(),
-            totalSupply(),
+            super.name(),
+            super.symbol(),
+            super.decimals(),
+            super.totalSupply(),
             totalMinted,
             minter,
             paused(),
-            owner(),
+            super.owner(),
             faucetEnabled,
             FAUCET_AMOUNT
         );

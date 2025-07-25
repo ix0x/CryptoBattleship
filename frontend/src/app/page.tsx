@@ -3,8 +3,13 @@
 import { Anchor, Coins, Shield, Target, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
 import PlaceholderImage from '@/components/PlaceholderImage'
+import ConnectWallet from '@/components/ConnectWallet'
+import LootboxPanel from '@/components/LootboxPanel'
+import { useProtocolStats } from '@/hooks/useProtocolStats'
 
 export default function Home() {
+  const { totalStaked, currentEpoch, weeklyEmissions, isLoading } = useProtocolStats()
+  
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -16,9 +21,7 @@ export default function Home() {
               <h1 className="text-2xl font-bold text-foreground">CryptoBattleship</h1>
             </div>
             <div className="flex items-center space-x-4">
-              <button className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors">
-                Connect Wallet
-              </button>
+              <ConnectWallet />
             </div>
           </div>
         </div>
@@ -94,21 +97,40 @@ export default function Home() {
           <h3 className="text-2xl font-bold text-card-foreground mb-6 text-center">Protocol Stats</h3>
           <div className="grid md:grid-cols-4 gap-6 text-center">
             <div>
-              <div className="text-3xl font-bold text-accent mb-2">∞</div>
-              <div className="text-card-foreground/80">Total Staked</div>
+              <div className="text-3xl font-bold text-accent mb-2">
+                {isLoading ? '...' : `${parseFloat(totalStaked).toFixed(0)}`}
+              </div>
+              <div className="text-card-foreground/80">Total Staked (SHIP)</div>
             </div>
             <div>
-              <div className="text-3xl font-bold text-accent mb-2">∞</div>
+              <div className="text-3xl font-bold text-accent mb-2">
+                {isLoading ? '...' : currentEpoch}
+              </div>
               <div className="text-card-foreground/80">Current Epoch</div>
             </div>
             <div>
-              <div className="text-3xl font-bold text-accent mb-2">∞</div>
+              <div className="text-3xl font-bold text-accent mb-2">
+                {isLoading ? '...' : `${parseFloat(weeklyEmissions).toFixed(0)}`}
+              </div>
               <div className="text-card-foreground/80">Weekly Emissions</div>
             </div>
             <div>
-              <div className="text-3xl font-bold text-accent mb-2">∞</div>
-              <div className="text-card-foreground/80">Active Players</div>
+              <div className="text-3xl font-bold text-accent mb-2">Live</div>
+              <div className="text-card-foreground/80">On Sonic Blaze</div>
             </div>
+          </div>
+        </section>
+
+        {/* Lootbox Section */}
+        <section className="mb-12">
+          <div className="text-center mb-8">
+            <h3 className="text-2xl font-bold text-foreground mb-4">Build Your Fleet</h3>
+            <p className="text-foreground/80">
+              Purchase lootboxes to collect ships, captains, crew members, and action cards.
+            </p>
+          </div>
+          <div className="max-w-2xl mx-auto">
+            <LootboxPanel />
           </div>
         </section>
 
@@ -119,7 +141,10 @@ export default function Home() {
             Connect your wallet to start staking and earning rewards in the CryptoBattleship ecosystem.
           </p>
           <div className="flex gap-4 justify-center flex-wrap">
-            <Link href="/stake" className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-semibold">
+            <Link href="/game" className="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-semibold">
+              Play Battleship
+            </Link>
+            <Link href="/stake" className="px-6 py-3 bg-secondary text-secondary-foreground border border-border rounded-lg hover:bg-secondary/80 transition-colors font-semibold">
               Start Staking
             </Link>
             <Link href="/fleet" className="px-6 py-3 bg-secondary text-secondary-foreground border border-border rounded-lg hover:bg-secondary/80 transition-colors font-semibold">
