@@ -12,7 +12,21 @@ export default function StakeForm() {
   const [lockPeriod, setLockPeriod] = useState('1') // weeks
   const { isConnected } = useAccount()
   const { balance, isLoading: balanceLoading } = useTokenBalance()
-  const { stakeTokens, isStaking, isStakeConfirmed, stakeError } = useStaking()
+  const { 
+    stakeTokens, 
+    isStaking, 
+    isStakeConfirmed, 
+    stakeError,
+    supportedTokens,
+    claimableRewards,
+    claimSpecificToken,
+    emergencyUnstakeTokens,
+    isClaiming,
+    isEmergencyUnstaking,
+    claimError,
+    emergencyUnstakeError,
+    stakingInfo
+  } = useStaking()
 
   const lockOptions = [
     { weeks: '1', multiplier: '1.0x', label: '1 Week' },
@@ -190,6 +204,95 @@ export default function StakeForm() {
             >
               Reset
             </button>
+          </div>
+        )}
+
+        {/* Multi-Token Rewards Section */}
+        {isConnected && (supportedTokens?.length || claimableRewards?.length) && (
+          <div className="mt-6 p-4 bg-secondary/10 border border-secondary/20 rounded-lg">
+            <h4 className="text-lg font-semibold text-card-foreground mb-4 flex items-center">
+              <Coins className="h-4 w-4 mr-2" />
+              Multi-Token Rewards
+            </h4>
+            
+            {/* Supported Tokens */}
+            {supportedTokens && supportedTokens.length > 0 && (
+              <div className="mb-4">
+                <div className="text-sm text-card-foreground/70 mb-2">Supported Reward Tokens:</div>
+                <div className="flex flex-wrap gap-2">
+                  {supportedTokens.map((token, index) => (
+                    <div key={index} className="px-2 py-1 bg-card border border-border rounded text-xs font-mono">
+                      {token.slice(0, 6)}...{token.slice(-4)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Claimable Rewards */}
+            {claimableRewards && claimableRewards.length > 0 && (
+              <div>
+                <div className="text-sm text-card-foreground/70 mb-3">Claimable Rewards:</div>
+                <div className="space-y-2">
+                  {claimableRewards.map((reward, index) => (
+                    <div key={index} className="flex items-center justify-between p-3 bg-card border border-border rounded-lg">
+                      <div>
+                        <div className="font-medium text-card-foreground">
+                          {(Number(reward.amount) / 1e18).toFixed(6)} tokens
+                        </div>
+                        <div className="text-xs text-card-foreground/60 font-mono">
+                          {reward.token.slice(0, 10)}...{reward.token.slice(-6)}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => claimSpecificToken(reward.token)}
+                        disabled={isClaiming || Number(reward.amount) === 0}
+                        className="px-3 py-1 text-sm bg-accent text-accent-foreground rounded hover:bg-accent/90 disabled:opacity-50 transition-colors"
+                      >
+                        {isClaiming ? 'Claiming...' : 'Claim'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Error Messages */}
+            {claimError && (
+              <div className="mt-3 p-2 bg-error/10 border border-error/20 rounded">
+                <p className="text-error text-xs">
+                  Claim Error: {(claimError as Error)?.message || 'Failed to claim rewards'}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Emergency Unstaking */}
+        {isConnected && stakingInfo && (
+          <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <h4 className="text-lg font-semibold text-yellow-800 mb-2 flex items-center">
+              <Zap className="h-4 w-4 mr-2" />
+              Emergency Options
+            </h4>
+            <div className="text-sm text-yellow-700 mb-3">
+              Emergency unstaking allows immediate withdrawal with a penalty. Use only in emergencies.
+            </div>
+            <button
+              onClick={() => emergencyUnstakeTokens(0)} // Assuming stake ID 0 for demo
+              disabled={isEmergencyUnstaking}
+              className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50 transition-colors text-sm"
+            >
+              {isEmergencyUnstaking ? 'Processing...' : 'Emergency Unstake (10% penalty)'}
+            </button>
+            
+            {emergencyUnstakeError && (
+              <div className="mt-2 p-2 bg-red-100 border border-red-200 rounded">
+                <p className="text-red-600 text-xs">
+                  Emergency unstake error: {(emergencyUnstakeError as Error)?.message}
+                </p>
+              </div>
+            )}
           </div>
         )}
 

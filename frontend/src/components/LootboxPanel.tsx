@@ -9,6 +9,7 @@ import ConnectWallet from './ConnectWallet'
 
 export default function LootboxPanel() {
   const [openCount, setOpenCount] = useState(1)
+  const [purchaseCount, setPurchaseCount] = useState(1)
   const { isConnected } = useAccount()
   const { 
     lootboxPrice, 
@@ -26,6 +27,21 @@ export default function LootboxPanel() {
       await buyLootbox()
     } catch (error) {
       console.error('Purchase failed:', error)
+    }
+  }
+
+  const handleBatchPurchase = async () => {
+    try {
+      // For batch purchases, call buyLootbox multiple times in sequence
+      for (let i = 0; i < purchaseCount; i++) {
+        await buyLootbox()
+        // Small delay between purchases to avoid rate limiting
+        if (i < purchaseCount - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000))
+        }
+      }
+    } catch (error) {
+      console.error('Batch purchase failed:', error)
     }
   }
 
@@ -77,6 +93,75 @@ export default function LootboxPanel() {
             </div>
           </div>
 
+          {/* Batch Purchase Controls */}
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-card-foreground mb-2">
+                Batch Purchase
+              </label>
+              <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setPurchaseCount(Math.max(1, purchaseCount - 1))}
+                    className="px-2 py-1 bg-secondary text-secondary-foreground rounded hover:bg-secondary/80"
+                  >
+                    -
+                  </button>
+                  <span className="px-3 py-1 bg-background border border-border rounded min-w-[3rem] text-center">
+                    {purchaseCount}
+                  </span>
+                  <button
+                    onClick={() => setPurchaseCount(Math.min(20, purchaseCount + 1))}
+                    className="px-2 py-1 bg-secondary text-secondary-foreground rounded hover:bg-secondary/80"
+                  >
+                    +
+                  </button>
+                </div>
+                <div className="text-sm text-card-foreground/70">
+                  Total: {lootboxPrice ? formatEther((lootboxPrice as bigint) * BigInt(purchaseCount)) : '0'} S
+                </div>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={handlePurchase}
+                disabled={isPurchasing || !lootboxPrice}
+                className="flex items-center justify-center space-x-2 px-4 py-3 bg-accent text-accent-foreground rounded-lg hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-semibold"
+              >
+                {isPurchasing ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-accent-foreground border-t-transparent"></div>
+                    <span>Buying...</span>
+                  </>
+                ) : (
+                  <>
+                    <Gift className="h-4 w-4" />
+                    <span>Buy 1</span>
+                  </>
+                )}
+              </button>
+              
+              <button
+                onClick={handleBatchPurchase}
+                disabled={isPurchasing || !lootboxPrice || purchaseCount < 2}
+                className="flex items-center justify-center space-x-2 px-4 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-semibold"
+              >
+                {isPurchasing ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-foreground border-t-transparent"></div>
+                    <span>Buying...</span>
+                  </>
+                ) : (
+                  <>
+                    <Package className="h-4 w-4" />
+                    <span>Buy {purchaseCount}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
           {purchaseError && (
             <div className="p-3 bg-error/10 border border-error/20 rounded-lg">
               <p className="text-error text-sm">
@@ -84,24 +169,6 @@ export default function LootboxPanel() {
               </p>
             </div>
           )}
-
-          <button
-            onClick={handlePurchase}
-            disabled={isPurchasing || !lootboxPrice}
-            className="w-full flex items-center justify-center space-x-2 px-6 py-3 bg-accent text-accent-foreground rounded-lg hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-semibold"
-          >
-            {isPurchasing ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-accent-foreground border-t-transparent"></div>
-                <span>Purchasing...</span>
-              </>
-            ) : (
-              <>
-                <Coins className="h-4 w-4" />
-                <span>Buy Lootbox</span>
-              </>
-            )}
-          </button>
         </div>
       </div>
 
@@ -139,6 +206,31 @@ export default function LootboxPanel() {
                   Max
                 </button>
               </div>
+            </div>
+
+            {/* Quick Batch Buttons */}
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => setOpenCount(5)}
+                disabled={unopenedCount < 5}
+                className="flex-1 px-3 py-2 bg-secondary text-secondary-foreground rounded hover:bg-secondary/80 disabled:opacity-50 text-sm"
+              >
+                Open 5
+              </button>
+              <button
+                onClick={() => setOpenCount(10)}
+                disabled={unopenedCount < 10}
+                className="flex-1 px-3 py-2 bg-secondary text-secondary-foreground rounded hover:bg-secondary/80 disabled:opacity-50 text-sm"
+              >
+                Open 10
+              </button>
+              <button
+                onClick={() => setOpenCount(20)}
+                disabled={unopenedCount < 20}
+                className="flex-1 px-3 py-2 bg-secondary text-secondary-foreground rounded hover:bg-secondary/80 disabled:opacity-50 text-sm"
+              >
+                Open 20
+              </button>
             </div>
 
             {openError && (

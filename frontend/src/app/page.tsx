@@ -5,6 +5,8 @@ import Link from 'next/link'
 import PlaceholderImage from '@/components/PlaceholderImage'
 import ConnectWallet from '@/components/ConnectWallet'
 import LootboxPanel from '@/components/LootboxPanel'
+import CreditsPanel from '@/components/CreditsPanel'
+import EpochProgress from '@/components/EpochProgress'
 import { useProtocolStats } from '@/hooks/useProtocolStats'
 
 export default function Home() {
@@ -118,6 +120,32 @@ export default function Home() {
               <div className="text-3xl font-bold text-accent mb-2">Live</div>
               <div className="text-card-foreground/80">On Sonic Blaze</div>
             </div>
+          </div>
+        </section>
+
+        {/* Epoch Progress Section */}
+        <section className="mb-12">
+          <div className="text-center mb-8">
+            <h3 className="text-2xl font-bold text-foreground mb-4">Epoch Progress</h3>
+            <p className="text-foreground/80">
+              Track the current epoch progress and upcoming reward unlocks.
+            </p>
+          </div>
+          <div className="max-w-4xl mx-auto">
+            <EpochProgress />
+          </div>
+        </section>
+
+        {/* Credits Section */}
+        <section className="mb-12">
+          <div className="text-center mb-8">
+            <h3 className="text-2xl font-bold text-foreground mb-4">Game Credits & Rewards</h3>
+            <p className="text-foreground/80">
+              Manage your battle credits and claim your earned SHIP tokens.
+            </p>
+          </div>
+          <div className="max-w-4xl mx-auto">
+            <CreditsPanel />
           </div>
         </section>
 

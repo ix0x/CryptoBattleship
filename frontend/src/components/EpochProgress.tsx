@@ -1,194 +1,169 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Calendar, Clock, TrendingUp, Users } from 'lucide-react'
-
-interface EpochData {
-  current: number
-  startTime: Date
-  endTime: Date
-  totalEmissions: string
-  totalStakers: number
-  avgMultiplier: string
-  revenueBonus: string
-}
+import { Clock, TrendingUp, Award, Calendar } from 'lucide-react'
+import { useProtocolStats } from '@/hooks/useProtocolStats'
 
 export default function EpochProgress() {
-  const [epochData] = useState<EpochData>({
-    current: 42,
-    startTime: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000), // 3 days ago
-    endTime: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000), // 4 days from now
-    totalEmissions: '125,000',
-    totalStakers: 1247,
-    avgMultiplier: '1.3',
-    revenueBonus: '15'
-  })
-  
-  const [timeRemaining, setTimeRemaining] = useState('')
-  const [progress, setProgress] = useState(0)
+  const { currentEpoch, epochProgress, weeklyEmissions, isLoading } = useProtocolStats()
+  const [timeLeft, setTimeLeft] = useState<string>('')
 
+  // Update countdown timer
   useEffect(() => {
+    if (!epochProgress?.timeLeft) return
+
     const updateTimer = () => {
-      const now = new Date()
-      const total = epochData.endTime.getTime() - epochData.startTime.getTime()
-      const elapsed = now.getTime() - epochData.startTime.getTime()
-      const remaining = epochData.endTime.getTime() - now.getTime()
-      
-      // Calculate progress (0-100)
-      const progressPercent = Math.max(0, Math.min(100, (elapsed / total) * 100))
-      setProgress(progressPercent)
-      
-      // Format time remaining
-      if (remaining > 0) {
-        const days = Math.floor(remaining / (24 * 60 * 60 * 1000))
-        const hours = Math.floor((remaining % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000))
-        const minutes = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000))
-        
-        if (days > 0) {
-          setTimeRemaining(`${days}d ${hours}h ${minutes}m`)
-        } else if (hours > 0) {
-          setTimeRemaining(`${hours}h ${minutes}m`)
-        } else {
-          setTimeRemaining(`${minutes}m`)
-        }
+      const seconds = epochProgress.timeLeft
+      const days = Math.floor(seconds / 86400)
+      const hours = Math.floor((seconds % 86400) / 3600)
+      const minutes = Math.floor((seconds % 3600) / 60)
+      const remainingSeconds = seconds % 60
+
+      if (days > 0) {
+        setTimeLeft(`${days}d ${hours}h ${minutes}m`)
+      } else if (hours > 0) {
+        setTimeLeft(`${hours}h ${minutes}m ${remainingSeconds}s`)
+      } else if (minutes > 0) {
+        setTimeLeft(`${minutes}m ${remainingSeconds}s`)
       } else {
-        setTimeRemaining('Epoch ended')
+        setTimeLeft(`${remainingSeconds}s`)
       }
     }
-    
+
     updateTimer()
-    const interval = setInterval(updateTimer, 60000) // Update every minute
-    
+    const interval = setInterval(updateTimer, 1000)
     return () => clearInterval(interval)
-  }, [epochData])
+  }, [epochProgress?.timeLeft])
 
-  return (
-    <div className="space-y-6">
-      {/* Current Epoch Header */}
+  if (isLoading || !epochProgress) {
+    return (
       <div className="bg-card border border-border rounded-lg p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-accent/10 rounded-lg">
-              <Calendar className="h-6 w-6 text-accent" />
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold text-card-foreground">Epoch {epochData.current}</h2>
-              <p className="text-card-foreground/70">Weekly reward distribution cycle</p>
-            </div>
-          </div>
-          <div className="text-right">
-            <div className="text-2xl font-bold text-accent">{timeRemaining}</div>
-            <div className="text-sm text-card-foreground/60">remaining</div>
-          </div>
+        <div className="flex items-center space-x-3 mb-4">
+          <div className="animate-pulse w-8 h-8 bg-secondary/20 rounded-lg"></div>
+          <div className="animate-pulse w-32 h-6 bg-secondary/20 rounded"></div>
         </div>
-
-        {/* Progress Bar */}
-        <div className="mb-6">
-          <div className="flex justify-between text-sm text-card-foreground/80 mb-2">
-            <span>Epoch Progress</span>
-            <span>{progress.toFixed(1)}% complete</span>
-          </div>
-          <div className="w-full bg-secondary/20 rounded-full h-3">
-            <div 
-              className="bg-gradient-to-r from-accent to-primary h-3 rounded-full transition-all duration-300 ease-out"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <div className="flex justify-between text-xs text-card-foreground/60 mt-1">
-            <span>{epochData.startTime.toLocaleDateString()}</span>
-            <span>{epochData.endTime.toLocaleDateString()}</span>
-          </div>
-        </div>
-
-        {/* Epoch Stats Grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-secondary/10 rounded-lg p-4">
-            <div className="flex items-center space-x-2 mb-2">
-              <TrendingUp className="h-4 w-4 text-accent" />
-              <span className="text-sm text-card-foreground/80">Total Emissions</span>
-            </div>
-            <div className="text-lg font-bold text-card-foreground">{epochData.totalEmissions} SHIP</div>
-          </div>
-          
-          <div className="bg-secondary/10 rounded-lg p-4">
-            <div className="flex items-center space-x-2 mb-2">
-              <Users className="h-4 w-4 text-accent" />
-              <span className="text-sm text-card-foreground/80">Active Stakers</span>
-            </div>
-            <div className="text-lg font-bold text-card-foreground">{epochData.totalStakers.toLocaleString()}</div>
-          </div>
-          
-          <div className="bg-secondary/10 rounded-lg p-4">
-            <div className="flex items-center space-x-2 mb-2">
-              <Clock className="h-4 w-4 text-accent" />
-              <span className="text-sm text-card-foreground/80">Avg Multiplier</span>
-            </div>
-            <div className="text-lg font-bold text-card-foreground">{epochData.avgMultiplier}x</div>
-          </div>
-          
-          <div className="bg-secondary/10 rounded-lg p-4">
-            <div className="flex items-center space-x-2 mb-2">
-              <TrendingUp className="h-4 w-4 text-accent" />
-              <span className="text-sm text-card-foreground/80">Revenue Bonus</span>
-            </div>
-            <div className="text-lg font-bold text-card-foreground">+{epochData.revenueBonus}%</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Linear Unlock Explanation */}
-      <div className="bg-card border border-border rounded-lg p-6">
-        <h3 className="text-xl font-semibold text-card-foreground mb-4">Linear Unlock Schedule</h3>
-        <div className="space-y-4">
-          <p className="text-card-foreground/80">
-            Rewards unlock gradually throughout the epoch, starting at 0% and reaching 100% by the end of the week.
-          </p>
-          
-          <div className="grid md:grid-cols-3 gap-4 text-sm">
-            <div className="bg-secondary/10 rounded-lg p-3">
-              <div className="text-accent font-semibold mb-1">Day 1-2</div>
-              <div className="text-card-foreground/80">0% - 28% unlocked</div>
-            </div>
-            <div className="bg-secondary/10 rounded-lg p-3">
-              <div className="text-accent font-semibold mb-1">Day 3-5</div>
-              <div className="text-card-foreground/80">28% - 71% unlocked</div>
-            </div>
-            <div className="bg-secondary/10 rounded-lg p-3">
-              <div className="text-accent font-semibold mb-1">Day 6-7</div>
-              <div className="text-card-foreground/80">71% - 100% unlocked</div>
-            </div>
-          </div>
-          
-          <div className="bg-accent/10 border border-accent/20 rounded-lg p-4 mt-4">
-            <p className="text-sm text-card-foreground/80">
-              <strong>Pro tip:</strong> You can claim partial rewards at any time during the epoch. 
-              Rewards continue unlocking even after claiming, so you can claim multiple times per week.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Recent Epochs */}
-      <div className="bg-card border border-border rounded-lg p-6">
-        <h3 className="text-xl font-semibold text-card-foreground mb-4">Recent Epochs</h3>
-        <div className="space-y-3">
-          {[
-            { epoch: 41, emissions: '118,500', bonus: '12%', status: 'Completed' },
-            { epoch: 40, emissions: '115,200', bonus: '8%', status: 'Completed' },
-            { epoch: 39, emissions: '121,800', bonus: '18%', status: 'Completed' },
-          ].map((epoch) => (
-            <div key={epoch.epoch} className="flex items-center justify-between p-3 bg-secondary/5 rounded-lg">
-              <div className="flex items-center space-x-4">
-                <div className="text-card-foreground font-semibold">Epoch {epoch.epoch}</div>
-                <div className="text-sm text-card-foreground/70">{epoch.emissions} SHIP</div>
-                <div className="text-sm text-accent">+{epoch.bonus} revenue bonus</div>
-              </div>
-              <div className="text-sm text-success bg-success/10 px-2 py-1 rounded">
-                {epoch.status}
-              </div>
+        <div className="animate-pulse w-full h-4 bg-secondary/20 rounded mb-4"></div>
+        <div className="grid grid-cols-3 gap-4">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="animate-pulse">
+              <div className="w-full h-4 bg-secondary/20 rounded mb-2"></div>
+              <div className="w-3/4 h-3 bg-secondary/20 rounded"></div>
             </div>
           ))}
         </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-card border border-border rounded-lg p-6">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center space-x-3">
+          <div className="p-2 bg-primary/10 rounded-lg">
+            <Clock className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <h3 className="text-xl font-bold text-card-foreground">Epoch Progress</h3>
+            <p className="text-card-foreground/70">Current epoch #{currentEpoch}</p>
+          </div>
+        </div>
+        
+        <div className="text-right">
+          <div className="text-2xl font-bold text-accent">{epochProgress.progress.toFixed(1)}%</div>
+          <div className="text-sm text-card-foreground/70">Complete</div>
+        </div>
+      </div>
+
+      {/* Progress Bar */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm text-card-foreground/70">Epoch Progress</span>
+          <span className="text-sm font-medium text-card-foreground">{timeLeft} remaining</span>
+        </div>
+        
+        <div className="w-full bg-secondary/20 rounded-full h-3 overflow-hidden">
+          <div 
+            className="h-full bg-gradient-to-r from-primary to-accent transition-all duration-1000 ease-out"
+            style={{ width: `${epochProgress.progress}%` }}
+          >
+            <div className="h-full bg-white/20 animate-pulse"></div>
+          </div>
+        </div>
+        
+        <div className="flex justify-between text-xs text-card-foreground/60 mt-1">
+          <span>Start</span>
+          <span>Week Complete</span>
+        </div>
+      </div>
+
+      {/* Stats Grid */}
+      <div className="grid md:grid-cols-3 gap-4 mb-4">
+        <div className="text-center p-3 bg-secondary/10 rounded-lg">
+          <div className="flex items-center justify-center mb-2">
+            <Calendar className="h-4 w-4 text-accent mr-1" />
+            <span className="text-sm text-card-foreground/70">Time Left</span>
+          </div>
+          <div className="font-bold text-card-foreground">{timeLeft}</div>
+        </div>
+        
+        <div className="text-center p-3 bg-secondary/10 rounded-lg">
+          <div className="flex items-center justify-center mb-2">
+            <TrendingUp className="h-4 w-4 text-accent mr-1" />
+            <span className="text-sm text-card-foreground/70">Emissions</span>
+          </div>
+          <div className="font-bold text-card-foreground">
+            {parseFloat(weeklyEmissions).toFixed(0)} SHIP
+          </div>
+        </div>
+        
+        <div className="text-center p-3 bg-secondary/10 rounded-lg">
+          <div className="flex items-center justify-center mb-2">
+            <Award className="h-4 w-4 text-accent mr-1" />
+            <span className="text-sm text-card-foreground/70">Next Epoch</span>
+          </div>
+          <div className="font-bold text-card-foreground">#{currentEpoch + 1}</div>
+        </div>
+      </div>
+
+      {/* Epoch Status */}
+      <div className={`p-3 rounded-lg border ${
+        epochProgress.isComplete 
+          ? 'bg-green-50 border-green-200' 
+          : epochProgress.progress > 75
+            ? 'bg-yellow-50 border-yellow-200'
+            : 'bg-blue-50 border-blue-200'
+      }`}>
+        <div className="flex items-center space-x-2">
+          <div className={`w-2 h-2 rounded-full ${
+            epochProgress.isComplete
+              ? 'bg-green-500'
+              : epochProgress.progress > 75
+                ? 'bg-yellow-500'
+                : 'bg-blue-500 animate-pulse'
+          }`}></div>
+          <span className={`text-sm font-medium ${
+            epochProgress.isComplete
+              ? 'text-green-700'
+              : epochProgress.progress > 75
+                ? 'text-yellow-700'
+                : 'text-blue-700'
+          }`}>
+            {epochProgress.isComplete
+              ? 'Epoch complete - rewards unlocked!'
+              : epochProgress.progress > 75
+                ? 'Epoch ending soon - rewards will unlock'
+                : 'Epoch in progress - earning rewards'
+            }
+          </span>
+        </div>
+      </div>
+
+      {/* Additional Info */}
+      <div className="mt-4 text-xs text-card-foreground/60 space-y-1">
+        <p>• Epochs last 1 week (604,800 seconds)</p>
+        <p>• Rewards unlock linearly throughout each epoch</p>
+        <p>• Staking multipliers reset at the start of each new epoch</p>
       </div>
     </div>
   )

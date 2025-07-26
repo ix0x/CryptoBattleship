@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Target, Zap, Clock, User } from 'lucide-react'
+import { Target, Zap, Clock, User, SkipForward } from 'lucide-react'
 import { useAccount } from 'wagmi'
 import { useContractRead, useContractWrite } from '@/hooks/useContract'
 
@@ -18,6 +18,11 @@ export default function BattleInterface({ gameId }: BattleInterfaceProps) {
   )
   const [selectedCell, setSelectedCell] = useState<{ x: number; y: number } | null>(null)
   const [gameInfo, setGameInfo] = useState<any>(null)
+  const [turnTimeLeft, setTurnTimeLeft] = useState<number>(0)
+  const [canForceSkip, setCanForceSkip] = useState<boolean>(false)
+  const [availableActions, setAvailableActions] = useState<any[]>([])
+  const [usedActions, setUsedActions] = useState<number[]>([])
+  const [selectedAction, setSelectedAction] = useState<number | null>(null)
 
   // Get game info
   const { data: contractGameInfo, refetch: refetchGameInfo } = useContractRead(
@@ -38,12 +43,56 @@ export default function BattleInterface({ gameId }: BattleInterfaceProps) {
   // Contract interactions
   const { writeContract: makeAttack, isPending: isAttacking, error: attackError } = useContractWrite('BattleshipGame')
   const { writeContract: useAction, isPending: isUsingAction, error: actionError } = useContractWrite('BattleshipGame')
+  const { writeContract: forceSkipTurn, isPending: isSkipping, error: skipError } = useContractWrite('BattleshipGame')
 
   useEffect(() => {
     if (contractGameInfo) {
       setGameInfo(contractGameInfo)
     }
   }, [contractGameInfo])
+
+  // Load available actions from localStorage (set during fleet setup)
+  useEffect(() => {
+    const storedFleet = localStorage.getItem(`fleet_${gameId}`)
+    if (storedFleet) {
+      try {
+        const fleetData = JSON.parse(storedFleet)
+        setAvailableActions(fleetData.actions || [])
+      } catch (error) {
+        console.error('Failed to load fleet actions:', error)
+      }
+    }
+  }, [gameId])
+
+  // Turn timer logic
+  useEffect(() => {
+    if (!gameInfo || !address) return
+
+    const TURN_TIMEOUT = 300 // 5 minutes in seconds
+    const now = Math.floor(Date.now() / 1000)
+    const turnStartTime = Number(gameInfo.lastMoveTime || 0)
+    const timeElapsed = now - turnStartTime
+    const timeLeft = Math.max(0, TURN_TIMEOUT - timeElapsed)
+
+    setTurnTimeLeft(timeLeft)
+    setCanForceSkip(timeLeft === 0 && !isMyTurn)
+
+    // Update timer every second
+    const interval = setInterval(() => {
+      const currentTime = Math.floor(Date.now() / 1000)
+      const elapsed = currentTime - turnStartTime
+      const remaining = Math.max(0, TURN_TIMEOUT - elapsed)
+      
+      setTurnTimeLeft(remaining)
+      setCanForceSkip(remaining === 0 && !isMyTurn)
+      
+      if (remaining === 0) {
+        clearInterval(interval)
+      }
+    }, 1000)
+
+    return () => clearInterval(interval)
+  }, [gameInfo, address, isMyTurn])
 
   const isMyTurn = gameInfo && address && (
     (gameInfo.currentPlayer === 1 && gameInfo.player1.toLowerCase() === address.toLowerCase()) ||
@@ -78,6 +127,59 @@ export default function BattleInterface({ gameId }: BattleInterfaceProps) {
     } catch (error) {
       console.error('Attack failed:', error)
     }
+  }
+
+  const handleForceSkip = async () => {
+    if (!canForceSkip || isSkipping) return
+
+    try {
+      await forceSkipTurn('forceSkipTurn', [gameId])
+      refetchGameInfo()
+    } catch (error) {
+      console.error('Force skip failed:', error)
+    }
+  }
+
+  const formatTime = (seconds: number): string => {
+    const minutes = Math.floor(seconds / 60)
+    const remainingSeconds = seconds % 60
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+  }
+
+  const handleUseAction = async (actionIndex: number) => {
+    if (!selectedCell || !isMyTurn || isUsingAction || usedActions.includes(actionIndex)) return
+    
+    const action = availableActions[actionIndex]
+    if (!action) return
+
+    try {
+      // Extract action ID from action NFT
+      const actionId = parseInt(action.id.split('_')[1]) || 1
+      
+      await useAction('useActionCard', [
+        gameId,
+        actionId,
+        selectedCell.x,
+        selectedCell.y,
+        0 // Additional parameters if needed
+      ])
+      
+      // Mark action as used
+      setUsedActions(prev => [...prev, actionIndex])
+      setSelectedAction(null)
+      setSelectedCell(null)
+      refetchGameInfo()
+    } catch (error) {
+      console.error('Action usage failed:', error)
+    }
+  }
+
+  const canUseAction = (actionIndex: number): boolean => {
+    return isMyTurn && 
+           !isUsingAction && 
+           !usedActions.includes(actionIndex) && 
+           selectedCell !== null &&
+           usedActions.length < 3 // MAX_ACTIONS_PER_TURN = 3
   }
 
   const getCellColor = (x: number, y: number) => {
@@ -137,8 +239,19 @@ export default function BattleInterface({ gameId }: BattleInterfaceProps) {
               </span>
             </div>
             <div className="text-sm text-card-foreground/70">
-              Game #{gameId}
+              Time left: <span className={`font-mono ${turnTimeLeft < 60 ? 'text-red-500' : 'text-accent'}`}>
+                {formatTime(turnTimeLeft)}
+              </span>
             </div>
+            {canForceSkip && (
+              <button
+                onClick={handleForceSkip}
+                disabled={isSkipping}
+                className="mt-2 px-3 py-1 text-xs bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 transition-colors"
+              >
+                {isSkipping ? 'Skipping...' : 'Force Skip Turn'}
+              </button>
+            )}
           </div>
           
           <div className="text-center">
@@ -240,42 +353,90 @@ export default function BattleInterface({ gameId }: BattleInterfaceProps) {
 
         {/* Action Cards */}
         <div className="space-y-4">
-          <h3 className="text-xl font-bold text-foreground">Action Cards</h3>
-          
-          {/* Placeholder for action cards - would come from fleet setup */}
-          <div className="space-y-2">
-            <div className="p-3 bg-card border border-border rounded-lg">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-semibold text-card-foreground">Torpedo Barrage</span>
-                <Zap className="h-4 w-4 text-accent" />
-              </div>
-              <p className="text-sm text-card-foreground/70 mb-3">
-                Attack 3x3 area for massive damage
-              </p>
-              <button
-                disabled={!isMyTurn || isUsingAction}
-                className="w-full px-3 py-2 bg-accent text-accent-foreground rounded hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-semibold"
-              >
-                Use Action
-              </button>
-            </div>
-
-            <div className="p-3 bg-card border border-border rounded-lg opacity-50">
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-semibold text-card-foreground">Sonar Ping</span>
-                <Zap className="h-4 w-4 text-accent" />
-              </div>
-              <p className="text-sm text-card-foreground/70 mb-3">
-                Reveal enemy ships in target area
-              </p>
-              <button
-                disabled
-                className="w-full px-3 py-2 bg-secondary text-secondary-foreground rounded cursor-not-allowed text-sm font-semibold"
-              >
-                Used
-              </button>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xl font-bold text-foreground">Action Cards</h3>
+            <div className="text-sm text-foreground/70">
+              Used: {usedActions.length}/3 this turn
             </div>
           </div>
+          
+          {availableActions.length > 0 ? (
+            <div className="space-y-2">
+              {availableActions.map((action, index) => {
+                const isUsed = usedActions.includes(index)
+                const canUse = canUseAction(index)
+                const isSelected = selectedAction === index
+                
+                return (
+                  <div 
+                    key={index}
+                    className={`p-3 border rounded-lg transition-all ${
+                      isUsed 
+                        ? 'bg-gray-100 border-gray-200 opacity-50' 
+                        : isSelected
+                          ? 'bg-accent/10 border-accent'
+                          : 'bg-card border-border hover:border-accent/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold text-card-foreground">{action.name}</span>
+                      <div className="flex items-center space-x-2">
+                        <Zap className="h-4 w-4 text-accent" />
+                        <span className="text-xs px-2 py-1 bg-secondary/20 rounded">
+                          {action.rarity}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <p className="text-sm text-card-foreground/70 mb-3">
+                      {action.attributes.description || `Damage: ${action.attributes.damage || 50}`}
+                    </p>
+                    
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => setSelectedAction(isSelected ? null : index)}
+                        disabled={isUsed || !isMyTurn}
+                        className={`flex-1 px-3 py-2 rounded text-sm font-semibold transition-colors ${
+                          isSelected
+                            ? 'bg-accent text-accent-foreground'
+                            : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+                        } disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        {isSelected ? 'Selected' : 'Select'}
+                      </button>
+                      
+                      <button
+                        onClick={() => handleUseAction(index)}
+                        disabled={!canUse || selectedAction !== index}
+                        className="px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-semibold"
+                      >
+                        {isUsed ? 'Used' : isUsingAction ? 'Using...' : 'Use'}
+                      </button>
+                    </div>
+                    
+                    {selectedAction === index && !selectedCell && (
+                      <div className="mt-2 text-xs text-orange-600 bg-orange-50 rounded px-2 py-1">
+                        Select a target coordinate first
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-6 bg-secondary/10 rounded-lg">
+              <Zap className="h-8 w-8 text-secondary/50 mx-auto mb-2" />
+              <p className="text-secondary/70">No action cards equipped</p>
+              <p className="text-xs text-secondary/50">Select actions during fleet setup</p>
+            </div>
+          )}
+          
+          {usedActions.length >= 3 && (
+            <div className="text-center py-2 bg-yellow-50 border border-yellow-200 rounded">
+              <p className="text-yellow-700 text-sm">Maximum actions used this turn</p>
+            </div>
+          )}
+        </div>
 
           {/* Game Stats */}
           <div className="bg-card border border-border rounded-lg p-4">
@@ -311,6 +472,15 @@ export default function BattleInterface({ gameId }: BattleInterfaceProps) {
           </div>
           <p className="text-secondary/80 text-sm">
             Your opponent is planning their attack. Stand by!
+          </p>
+        </div>
+      )}
+
+      {/* Error Messages */}
+      {skipError && (
+        <div className="bg-error/10 border border-error/20 rounded-lg p-4">
+          <p className="text-error text-sm">
+            Error forcing skip: {(skipError as Error)?.message || 'Failed to skip turn'}
           </p>
         </div>
       )}

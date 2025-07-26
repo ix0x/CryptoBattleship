@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { Users, Coins, Play, Plus } from 'lucide-react'
+import { Users, Coins, Play, Plus, X } from 'lucide-react'
 import { useContractRead, useContractWrite } from '@/hooks/useContract'
+import { useAccount } from 'wagmi'
 import { formatEther } from 'viem'
 
 const GAME_SIZES = [
@@ -15,6 +16,7 @@ const GAME_SIZES = [
 export default function GameLobby() {
   const [selectedGameSize, setSelectedGameSize] = useState(0)
   const [showCreateGame, setShowCreateGame] = useState(false)
+  const { address } = useAccount()
 
   // Get ante amounts for each game size
   const { data: shrimpAnte } = useContractRead('BattleshipGame', 'anteAmounts', [0])
@@ -30,6 +32,7 @@ export default function GameLobby() {
   // Contract interactions
   const { writeContract: createGame, isPending: isCreating, error: createError } = useContractWrite('BattleshipGame')
   const { writeContract: joinGame, isPending: isJoining, error: joinError } = useContractWrite('BattleshipGame')
+  const { writeContract: cancelGame, isPending: isCancelling, error: cancelError } = useContractWrite('BattleshipGame')
 
   const handleCreateGame = async () => {
     try {
@@ -49,6 +52,14 @@ export default function GameLobby() {
       })
     } catch (error) {
       console.error('Failed to join game:', error)
+    }
+  }
+
+  const handleCancelGame = async (gameId: number) => {
+    try {
+      await cancelGame('cancelGame', [gameId])
+    } catch (error) {
+      console.error('Failed to cancel game:', error)
     }
   }
 
@@ -131,20 +142,80 @@ export default function GameLobby() {
           </div>
         </div>
 
-        {/* Placeholder for available games - would need events/subgraph in production */}
+        {/* Available Games List */}
         <div className="space-y-3">
-          {/* Mock waiting games */}
-          <div className="text-center py-8">
-            <div className="text-4xl mb-3">⚓</div>
-            <h3 className="text-lg font-semibold text-card-foreground mb-2">No Games Available</h3>
-            <p className="text-card-foreground/70 text-sm">Create a new game to start playing!</p>
-          </div>
+          {/* Mock waiting games - in production would come from events/subgraph */}
+          {[1, 2, 3].map((gameId) => (
+            <div key={gameId} className="bg-secondary/10 border border-secondary/20 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <div className="p-2 bg-primary/10 rounded-lg">
+                    <Play className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-card-foreground">
+                      {GAME_SIZES[gameId % GAME_SIZES.length].name} Game #{gameId}
+                    </div>
+                    <div className="text-sm text-card-foreground/70">
+                      Ante: {formatEther(antes[gameId % GAME_SIZES.length] || 0n)} ETH
+                    </div>
+                    <div className="text-xs text-card-foreground/60 font-mono">
+                      Creator: 0x1234...5678
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  {/* Show cancel button only for games created by current user */}
+                  {address && address.toLowerCase() === '0x1234567890123456789012345678901234567890'.toLowerCase() && (
+                    <button
+                      onClick={() => handleCancelGame(gameId)}
+                      disabled={isCancelling}
+                      className="px-3 py-2 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 transition-colors flex items-center space-x-1"
+                    >
+                      {isCancelling ? (
+                        <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div>
+                      ) : (
+                        <X className="h-3 w-3" />
+                      )}
+                      <span>{isCancelling ? 'Cancelling...' : 'Cancel'}</span>
+                    </button>
+                  )}
+                  
+                  <button
+                    onClick={() => handleJoinGame(gameId)}
+                    disabled={isJoining}
+                    className="px-4 py-2 bg-accent text-accent-foreground rounded-lg hover:bg-accent/90 disabled:opacity-50 transition-colors font-medium"
+                  >
+                    {isJoining ? 'Joining...' : 'Join Game'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+          
+          {/* Show placeholder when no games */}
+          {false && (
+            <div className="text-center py-8">
+              <div className="text-4xl mb-3">⚓</div>
+              <h3 className="text-lg font-semibold text-card-foreground mb-2">No Games Available</h3>
+              <p className="text-card-foreground/70 text-sm">Create a new game to start playing!</p>
+            </div>
+          )}
         </div>
 
         {joinError && (
           <div className="p-3 bg-error/10 border border-error/20 rounded-lg mt-4">
             <p className="text-error text-sm">
-              Error: {(joinError as Error)?.message || 'Failed to join game'}
+              Join Error: {(joinError as Error)?.message || 'Failed to join game'}
+            </p>
+          </div>
+        )}
+
+        {cancelError && (
+          <div className="p-3 bg-error/10 border border-error/20 rounded-lg mt-4">
+            <p className="text-error text-sm">
+              Cancel Error: {(cancelError as Error)?.message || 'Failed to cancel game'}
             </p>
           </div>
         )}

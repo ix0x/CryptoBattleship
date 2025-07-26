@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import PlaceholderImage from './PlaceholderImage'
+import { useContractRead } from '@/hooks/useContract'
 
 interface NFT {
   id: string
@@ -209,6 +210,30 @@ export default function SVGRenderer({ nft, className = "" }: SVGRendererProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Extract token ID from NFT ID (format: "type_tokenId")
+  const tokenId = parseInt(nft.id.split('_')[1]) || 1
+
+  // Get contract name based on NFT type
+  const getContractName = (type: string) => {
+    switch (type) {
+      case 'SHIP': return 'ShipNFTManager'
+      case 'CAPTAIN': return 'CaptainNFTManager'  
+      case 'CREW': return 'CrewNFTManager'
+      case 'ACTION': return 'ActionNFTManager'
+      default: return null
+    }
+  }
+
+  const contractName = getContractName(nft.type)
+
+  // Try to get real SVG from contract
+  const { data: contractSVG, isLoading: isContractLoading, error: contractError } = useContractRead(
+    contractName as any,
+    nft.type === 'SHIP' ? 'generatePlacardSVG' : 'tokenURI',
+    [tokenId],
+    { enabled: !!contractName && tokenId > 0 }
+  )
+
   const generateMockSVG = useCallback((nft: NFT): string => {
     const colors = getRarityColors(nft.rarity)
     const size = 200
@@ -228,28 +253,53 @@ export default function SVGRenderer({ nft, className = "" }: SVGRendererProps) {
   }, [])
 
   useEffect(() => {
-    const generateSVG = async () => {
+    const processSVG = async () => {
       setIsLoading(true)
       setError(null)
       
       try {
-        // Simulate fetching SVG from NFTManager contract
-        // In production, this would call the contract's tokenURI function
-        // and decode the base64 JSON to get the SVG
-        await new Promise(resolve => setTimeout(resolve, 1000)) // Simulate network delay
-        
-        const svg = generateMockSVG(nft)
-        setSvgContent(svg)
+        // First try to use real contract SVG
+        if (contractSVG && !contractError) {
+          if (nft.type === 'SHIP') {
+            // For ships, generatePlacardSVG returns raw SVG
+            setSvgContent(contractSVG as string)
+          } else {
+            // For other NFTs, tokenURI returns base64 encoded JSON with image field
+            try {
+              const decoded = atob((contractSVG as string).replace('data:application/json;base64,', ''))
+              const metadata = JSON.parse(decoded)
+              if (metadata.image && metadata.image.startsWith('data:image/svg+xml;base64,')) {
+                const svgDecoded = atob(metadata.image.replace('data:image/svg+xml;base64,', ''))
+                setSvgContent(svgDecoded)
+              } else {
+                // Fallback to mock SVG
+                setSvgContent(generateMockSVG(nft))
+              }
+            } catch {
+              // If decoding fails, use mock SVG
+              setSvgContent(generateMockSVG(nft))
+            }
+          }
+        } else {
+          // Fallback to mock SVG if contract call fails or is loading
+          setSvgContent(generateMockSVG(nft))
+        }
       } catch (err) {
         setError('Failed to load NFT art')
-        console.error('SVG generation error:', err)
+        console.error('SVG processing error:', err)
+        setSvgContent(generateMockSVG(nft))
       } finally {
         setIsLoading(false)
       }
     }
 
-    generateSVG()
-  }, [nft, generateMockSVG])
+    // Don't set loading if we're using contract data
+    if (!isContractLoading) {
+      processSVG()
+    } else {
+      setIsLoading(true)
+    }
+  }, [nft, contractSVG, contractError, isContractLoading, generateMockSVG])
 
   if (isLoading) {
     return (
